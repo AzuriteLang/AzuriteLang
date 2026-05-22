@@ -6,16 +6,21 @@ pub fn compile_print<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<Basi
     let printf = get_or_declare_printf(cg);
 
     for arg_expr in args {
-        let val = cg.compile_expr(arg_expr)?;
-        let (fmt, data) = get_print_format(cg, &val);
-
-        let mut printf_args: Vec<BasicMetadataValueEnum> = vec![fmt.into()];
-        if let Some(d) = data { printf_args.push(d.into()); }
-
-        cg.builder.build_call(printf, &printf_args, "printtmp").unwrap();
+        // Check for boolean literals at AST level
+        if let Expr::Bool(b) = arg_expr {
+            let s = if *b { "true" } else { "false" };
+            let g = cg.builder.build_global_string_ptr(s, "boolstr").unwrap();
+            let fmt = cg.builder.build_global_string_ptr("%s", "bfmt").unwrap();
+            cg.builder.build_call(printf, &[fmt.as_pointer_value().into(), g.as_pointer_value().into()], "printtmp").unwrap();
+        } else {
+            let val = cg.compile_expr(arg_expr)?;
+            let (fmt, data) = get_print_format(cg, &val);
+            let mut printf_args: Vec<BasicMetadataValueEnum> = vec![fmt.into()];
+            if let Some(d) = data { printf_args.push(d.into()); }
+            cg.builder.build_call(printf, &printf_args, "printtmp").unwrap();
+        }
     }
 
-    // Final newline (Python-style print)
     let nl = cg.context.i8_type().const_int(b'\n' as u64, false);
     let putchar = get_or_declare_putchar(cg);
     cg.builder.build_call(putchar, &[nl.into()], "nl").unwrap();
