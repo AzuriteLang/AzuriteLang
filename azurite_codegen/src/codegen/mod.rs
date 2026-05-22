@@ -239,9 +239,10 @@ impl<'ctx> CodeGen<'ctx> {
     }
 
     pub fn has_terminator(&self) -> bool {
-        self.builder.get_insert_block()
-            .and_then(|b| b.get_last_instruction())
-            .is_some()
+        match self.builder.get_insert_block() {
+            Some(block) => block.get_terminator().is_some(),
+            None => false,
+        }
     }
 
     pub fn to_bool(&self, val: BasicValueEnum<'ctx>) -> IntValue<'ctx> {

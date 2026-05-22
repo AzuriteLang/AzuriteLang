@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use clap::Parser as ClapParser;
 
 use azurite_checker::Checker;
+#[cfg(feature = "llvm")]
 use azurite_codegen::CodeGen;
 use azurite_errors::Diagnostic;
 use azurite_lexer::Lexer;
@@ -117,37 +118,39 @@ fn cmd_check(file: &PathBuf) -> Result<(), String> {
     }
 }
 
-fn cmd_build(file: &PathBuf, _output: Option<&PathBuf>) -> Result<(), String> {
-    let source = read_file(file)?;
-    match Parser::from_source(&source) {
-        Ok((mut parser, _tokens)) => match parser.parse_program() {
-            Ok(_program) => {
-                #[cfg(feature = "llvm")]
-                {
-                    let context = Context::create();
-                    let mut codegen = CodeGen::new(&context, "azurite_program");
-                    codegen.compile_program(&_program).map_err(|e| e.to_string())?;
-                    let output_path = _output.unwrap_or(&file.with_extension("ll")).clone();
-                    codegen.module().print_to_file(&output_path)
-                        .map_err(|e| format!("cannot write output: {}", e))?;
-                    println!("LLVM IR written to {}", output_path.display());
-                }
-                #[cfg(not(feature = "llvm"))]
-                {
-                    let _ = _output;
-                    let codegen = CodeGen::new();
-                    codegen.compile_program(&_program).map_err(|e| e.to_string())?;
-                }
-                Ok(())
-            }
-            Err(err) => {
-                Diagnostic::print(&source, &file.to_string_lossy(), &err);
-                Err("build failed".to_string())
-            }
-        },
-        Err(err) => {
-            Diagnostic::print(&source, &file.to_string_lossy(), &err);
-            Err("build failed".to_string())
+fn cmd_build(file: &PathBuf, output: Option<&PathBuf>) -> Result<(), String> {
+    let (program, _source) = resolve_main(file)?;
+
+    #[cfg(feature = "llvm")]
+    {
+        let context = Context::create();
+        let mut cg = CodeGen::new(&context, "azurite_program");
+        cg.compile_program(&program).map_err(|e| e.to_string())?;
+
+        let ll_path = file.with_extension("ll");
+        cg.module().print_to_file(&ll_path)
+            .map_err(|e| format!("cannot write .ll: {}", e))?;
+        println!("LLVM IR: {}", ll_path.display());
+
+        let clang_candidates = [
+            "C:\\Program Files\\LLVM\\bin\\clang.exe",
+            "D:\\Util\\LLVM\\bin\\clang.exe",
+            "clang.exe",
+        ];
+        let clang = clang_candidates.iter().find(|p| Path::new(p).exists()).unwrap_or(&"clang.exe");
+        let exe = output.map(|o| o.to_path_buf()).unwrap_or_else(|| file.with_extension("exe"));
+
+        match std::process::Command::new(clang).args([&ll_path.to_string_lossy(), "-o", &exe.to_string_lossy()]).status() {
+            Ok(s) if s.success() => println!("Executable: {}", exe.display()),
+            _ => println!("LLVM IR generated. Install clang for .exe"),
         }
     }
+
+    #[cfg(not(feature = "llvm"))]
+    {
+        let _ = (output, program);
+        println!("LLVM backend not enabled. Use --features llvm");
+    }
+
+    Ok(())
 }
