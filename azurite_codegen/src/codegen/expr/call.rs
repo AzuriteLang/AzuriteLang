@@ -42,6 +42,35 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
             if method == "new" {
                 if let Expr::Ident(ident) = obj.as_ref() {
                     let fn_name = format!("{}_{}", ident.name, method);
+                    // Check if this is a generic class that needs instantiation
+                    if cg.module.get_function(&fn_name).is_none() {
+                        if let Some((_tp, fields, methods)) = cg.generic_classes.get(&ident.name).cloned() {
+                            // Determine concrete type from first arg
+                            let concrete_suffix = if args.is_empty() { "void".to_string() } else {
+                                match &args[0] {
+                                    Expr::Int(_) => "int",
+                                    Expr::Float(_) => "float",
+                                    Expr::String(_) => "string",
+                                    Expr::Bool(_) => "bool",
+                                    _ => "any",
+                                }.to_string()
+                            };
+                            let concrete_name = format!("{}_{}", ident.name, concrete_suffix);
+                            // Compile the concrete class
+                            let concrete_ident = Ident { name: concrete_name.clone(), span: azurite_lexer::Span::new(0, 0, 0, 0) };
+                            super::super::class::compile_class(cg, &concrete_ident, &fields, &methods, &None)?;
+                            let fn_name2 = format!("{}_{}", concrete_name, method);
+                            if let Some(f) = cg.module.get_function(&fn_name2) {
+                                let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
+                                let meta: Vec<BasicMetadataValueEnum> = compiled.iter().map(|a| (*a).into()).collect();
+                                let result = cg.builder.build_call(f, &meta, "calltmp").unwrap();
+                                return Ok(match result.try_as_basic_value() {
+                                    inkwell::values::ValueKind::Basic(bv) => bv,
+                                    _ => cg.context.i64_type().const_zero().into(),
+                                });
+                            }
+                        }
+                    }
                     if let Some(f) = cg.module.get_function(&fn_name) {
                         let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
                         let meta: Vec<BasicMetadataValueEnum> = compiled.iter().map(|a| (*a).into()).collect();

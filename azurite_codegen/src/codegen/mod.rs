@@ -28,6 +28,7 @@ pub struct CodeGen<'ctx> {
     pub builder: Builder<'ctx>,
     pub variables: HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>)>,
     pub struct_types: HashMap<String, ClassInfo<'ctx>>,
+    pub generic_classes: HashMap<String, (Vec<String>, Vec<ClassField>, Vec<Stmt>)>,
     pub function: Option<FunctionValue<'ctx>>,
     pub self_ptr: Option<PointerValue<'ctx>>,
     pub current_class: Option<String>,
@@ -45,6 +46,7 @@ impl<'ctx> CodeGen<'ctx> {
             builder,
             variables: HashMap::new(),
             struct_types: HashMap::new(),
+            generic_classes: HashMap::new(),
             function: None,
             self_ptr: None,
             current_class: None,
@@ -122,7 +124,11 @@ impl<'ctx> CodeGen<'ctx> {
                 self.function = None;
                 Ok(None)
             }
-            Stmt::Class { name, fields, methods, parent, .. } => {
+            Stmt::Class { name, fields, methods, parent, type_params } => {
+                if !type_params.is_empty() {
+                    self.generic_classes.insert(name.name.clone(), (type_params.clone(), fields.clone(), methods.clone()));
+                    return Ok(None);
+                }
                 class::compile_class(self, name, fields, methods, parent)?;
                 Ok(None)
             }
@@ -190,42 +196,6 @@ impl<'ctx> CodeGen<'ctx> {
                         let cond_bb = self.context.append_basic_block(cf, "for_cond");
                         let body_bb = self.context.append_basic_block(cf, "for_body");
                         let after_bb = self.context.append_basic_block(cf, "for_after");
-
-                        self.builder.build_unconditional_branch(cond_bb).unwrap();
-                        self.builder.position_at_end(cond_bb);
-                        let i = self.builder.build_load(i64_ty, i_ptr, "i").unwrap();
-                        let cmp = self.builder.build_int_compare(
-                            inkwell::IntPredicate::SLT, i.into_int_value(), limit_val, "fcmp",
-                        ).unwrap();
-                        self.builder.build_conditional_branch(cmp, body_bb, after_bb).unwrap();
-
-                        self.builder.position_at_end(body_bb);
-                        let elem = unsafe {
-                            self.builder.build_gep(i64_ty, arr, &[self.builder.build_load(i64_ty, i_ptr, "i").unwrap().into_int_value()], "elem").unwrap()
-                        };
-                        let val = self.builder.build_load(i64_ty, elem, &name.name).unwrap();
-                        let var_ptr = self.create_entry_alloca(i64_ty.into(), &name.name);
-                        self.builder.build_store(var_ptr, val).unwrap();
-                        self.variables.insert(name.name.clone(), (var_ptr, i64_ty.into()));
-                        self.compile_block_stmts(body, false)?;
-                        if !self.has_terminator() {
-                            let i2 = self.builder.build_load(i64_ty, i_ptr, "i").unwrap();
-                            let inc = self.builder.build_int_add(i2.into_int_value(), i64_ty.const_int(1, false), "inc").unwrap();
-                            self.builder.build_store(i_ptr, inc).unwrap();
-                            self.builder.build_unconditional_branch(cond_bb).unwrap();
-                        }
-                        self.builder.position_at_end(after_bb);
-                    }
-                }
-                Ok(Some(i64_ty.const_zero().into()))
-            }
-                        let i_ptr = self.create_entry_alloca(i64_ty.into(), &name.name);
-                        self.builder.build_store(i_ptr, i64_ty.const_zero()).unwrap();
-
-                        let cond_bb = self.context.append_basic_block(cf, "for_cond");
-                        let body_bb = self.context.append_basic_block(cf, "for_body");
-                        let after_bb = self.context.append_basic_block(cf, "for_after");
-                        let limit_val = i64_ty.const_int(count as u64, false);
 
                         self.builder.build_unconditional_branch(cond_bb).unwrap();
                         self.builder.position_at_end(cond_bb);

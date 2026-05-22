@@ -21,7 +21,14 @@ pub fn check_expr(c: &mut Checker, expr: &Expr) -> Option<Type> {
         Expr::Ident(ident) => {
             match c.scope.lookup(&ident.name) {
                 Some(sym) => Some(sym.type_.clone()),
-                None => { c.error(ident.span, format!("undefined '{}'", ident.name)); None }
+                None => {
+                    if c.generic_classes.contains_key(&ident.name) {
+                        Some(Type::Void)
+                    } else {
+                        c.error(ident.span, format!("undefined '{}'", ident.name));
+                        None
+                    }
+                }
             }
         }
         Expr::Binary { left, op, right } => {
