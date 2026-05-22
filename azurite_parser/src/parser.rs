@@ -38,21 +38,18 @@ impl Parser {
         match self.peek_kind() {
             Some(TokenKind::Let) => self.parse_let(),
             Some(TokenKind::Func) => self.parse_func(),
+            Some(TokenKind::Class) => self.parse_class(),
             Some(TokenKind::If) => {
                 let expr = self.parse_if_expr()?;
                 if let Expr::If { condition, then_branch, else_branch } = expr {
                     Ok(Stmt::If { condition, then_branch, else_branch })
-                } else {
-                    unreachable!()
-                }
+                } else { unreachable!() }
             }
             Some(TokenKind::While) => {
                 let expr = self.parse_while_expr()?;
                 if let Expr::While { condition, body } = expr {
                     Ok(Stmt::While { condition, body })
-                } else {
-                    unreachable!()
-                }
+                } else { unreachable!() }
             }
             Some(TokenKind::Return) => self.parse_return(),
             _ => {
@@ -63,15 +60,55 @@ impl Parser {
         }
     }
 
+    fn parse_class(&mut self) -> Result<Stmt, AzError> {
+        self.advance();
+        let name = self.parse_ident()?;
+        self.expect(TokenKind::LBrace, "expected '{' after class name")?;
+
+        let mut fields = Vec::new();
+        let mut methods = Vec::new();
+
+        loop {
+            match self.peek_kind() {
+                Some(TokenKind::RBrace) | None => break,
+                _ => self.parse_class_member(&mut fields, &mut methods)?,
+            }
+        }
+        self.expect(TokenKind::RBrace, "expected '}' after class body")?;
+        Ok(Stmt::Class { name, fields, methods })
+    }
+
+    fn parse_class_member(&mut self, fields: &mut Vec<ClassField>, methods: &mut Vec<Stmt>) -> Result<(), AzError> {
+        match self.peek_kind() {
+            Some(TokenKind::Func) => {
+                methods.push(self.parse_func()?);
+            }
+            Some(TokenKind::Ident(_)) => {
+                // Parse as field: name: type
+                let name = self.parse_ident()?;
+                if self.peek_kind() == Some(TokenKind::Colon) {
+                    self.advance();
+                    let type_ = self.parse_type()?;
+                    self.expect_semicolon()?;
+                    fields.push(ClassField { name, type_ });
+                } else {
+                    return Err(self.err(format!("expected ':' after field name '{}'", name.name)));
+                }
+            }
+            _ => {
+                return Err(self.err(format!("unexpected token in class: {}", self.peek_kind().unwrap())));
+            }
+        }
+        Ok(())
+    }
+
     fn parse_let(&mut self) -> Result<Stmt, AzError> {
         self.advance();
         let name = self.parse_ident()?;
         let type_annotation = if self.peek_kind() == Some(TokenKind::Colon) {
             self.advance();
             Some(self.parse_type()?)
-        } else {
-            None
-        };
+        } else { None };
         self.expect(TokenKind::Assign, "expected '=' in let declaration")?;
         let value = self.parse_expr(0)?;
         self.expect_semicolon()?;
@@ -87,9 +124,7 @@ impl Parser {
         let return_type = if self.peek_kind() == Some(TokenKind::Arrow) {
             self.advance();
             Some(self.parse_type()?)
-        } else {
-            None
-        };
+        } else { None };
         let body = self.parse_block()?;
         Ok(Stmt::Func { name, params, return_type, body: Box::new(body) })
     }
@@ -101,18 +136,27 @@ impl Parser {
                 Some(TokenKind::RParen) | None => break,
                 Some(TokenKind::Comma) => { self.advance(); }
                 _ => {
-                    let name = self.parse_ident()?;
+                    let name = self.parse_ident_or_self()?;
                     let type_annotation = if self.peek_kind() == Some(TokenKind::Colon) {
                         self.advance();
                         Some(self.parse_type()?)
-                    } else {
-                        None
-                    };
+                    } else { None };
                     params.push(Param { name, type_annotation });
                 }
             }
         }
         Ok(params)
+    }
+
+    fn parse_ident_or_self(&mut self) -> Result<Ident, AzError> {
+        match self.peek_kind() {
+            Some(TokenKind::Self_) => {
+                let span = self.current_span();
+                self.advance();
+                Ok(Ident { name: "self".to_string(), span })
+            }
+            _ => self.parse_ident(),
+        }
     }
 
     fn parse_return(&mut self) -> Result<Stmt, AzError> {
@@ -145,6 +189,7 @@ impl Parser {
             Some(TokenKind::True) => { self.advance(); Expr::Bool(true) }
             Some(TokenKind::False) => { self.advance(); Expr::Bool(false) }
             Some(TokenKind::Null) => { self.advance(); Expr::Null }
+            Some(TokenKind::Self_) => { self.advance(); Expr::Self_ }
             Some(TokenKind::Ident(name)) => {
                 let ident = Ident { name: name.clone(), span: self.current_span() };
                 self.advance();
@@ -160,10 +205,7 @@ impl Parser {
             Some(TokenKind::If) => self.parse_if_expr()?,
             Some(TokenKind::While) => self.parse_while_expr()?,
             Some(TokenKind::Minus) | Some(TokenKind::Not) => {
-                let op = match self.peek_kind() {
-                    Some(TokenKind::Minus) => UnOp::Neg,
-                    _ => UnOp::Not,
-                };
+                let op = match self.peek_kind() { Some(TokenKind::Minus) => UnOp::Neg, _ => UnOp::Not };
                 self.advance();
                 let ((), r_bp) = prefix_binding_power(op);
                 let operand = self.parse_expr(r_bp)?;
@@ -176,20 +218,43 @@ impl Parser {
         loop {
             match self.peek_kind() {
                 Some(TokenKind::LParen) => {
+                    // Check if LHS is a method call (ident(..)), otherwise regular call
                     self.advance();
                     let mut args = Vec::new();
                     loop {
                         match self.peek_kind() {
                             Some(TokenKind::RParen) | None => break,
                             Some(TokenKind::Comma) => { self.advance(); }
-                            _ => {
-                                let arg = self.parse_expr(0)?;
-                                args.push(arg);
-                            }
+                            _ => { args.push(self.parse_expr(0)?); }
                         }
                     }
-                    self.expect(TokenKind::RParen, "expected ')' after call arguments")?;
+                    self.expect(TokenKind::RParen, "expected ')' after arguments")?;
                     lhs = Expr::Call { callee: Box::new(lhs), args };
+                }
+                Some(TokenKind::Dot) => {
+                    self.advance();
+                    let field = match self.peek_kind() {
+                        Some(TokenKind::Ident(name)) => { 
+                            let name = name.clone(); self.advance(); name 
+                        }
+                        _ => return Err(self.err("expected field or method name after '.'")),
+                    };
+                    // Check if it's a method call
+                    if self.peek_kind() == Some(TokenKind::LParen) {
+                        self.advance();
+                        let mut args = Vec::new();
+                        loop {
+                            match self.peek_kind() {
+                                Some(TokenKind::RParen) | None => break,
+                                Some(TokenKind::Comma) => { self.advance(); }
+                                _ => { args.push(self.parse_expr(0)?); }
+                            }
+                        }
+                        self.expect(TokenKind::RParen, "expected ')' after method arguments")?;
+                        lhs = Expr::MethodCall { obj: Box::new(lhs), method: field, args };
+                    } else {
+                        lhs = Expr::FieldAccess { obj: Box::new(lhs), field };
+                    }
                 }
                 Some(ref op_kind) if is_binop(op_kind) => {
                     let op = token_to_binop(op_kind.clone()).unwrap();
@@ -212,10 +277,7 @@ impl Parser {
         loop {
             match self.peek_kind() {
                 Some(TokenKind::RBrace) | None => break,
-                _ => {
-                    let stmt = self.parse_stmt()?;
-                    statements.push(stmt);
-                }
+                _ => { statements.push(self.parse_stmt()?); }
             }
         }
         self.expect(TokenKind::RBrace, "expected '}'")?;
@@ -233,9 +295,7 @@ impl Parser {
             } else {
                 Some(Box::new(self.parse_block()?))
             }
-        } else {
-            None
-        };
+        } else { None };
         Ok(Expr::If { condition: Box::new(condition), then_branch: Box::new(then_branch), else_branch })
     }
 
@@ -251,35 +311,23 @@ impl Parser {
     }
 
     fn current_span(&self) -> Span {
-        self.tokens.get(self.pos).map_or(
-            Span::new(0, 0, 0, 0),
-            |t| t.span,
-        )
+        self.tokens.get(self.pos).map_or(Span::new(0, 0, 0, 0), |t| t.span)
     }
 
-    fn advance(&mut self) {
-        self.pos += 1;
-    }
+    fn advance(&mut self) { self.pos += 1; }
 
-    fn is_eof(&self) -> bool {
-        matches!(self.peek_kind(), Some(TokenKind::EOF) | None)
-    }
+    fn is_eof(&self) -> bool { matches!(self.peek_kind(), Some(TokenKind::EOF) | None) }
 
     fn expect(&mut self, expected: TokenKind, msg: &str) -> Result<(), AzError> {
         match self.peek_kind() {
-            Some(ref kind) if *kind == expected => {
-                self.advance();
-                Ok(())
-            }
+            Some(ref kind) if *kind == expected => { self.advance(); Ok(()) }
             Some(ref other) => Err(self.err(format!("{}: expected {}, found {}", msg, expected, other))),
             None => Err(self.err(format!("{}: expected {}, found EOF", msg, expected))),
         }
     }
 
     fn expect_semicolon(&mut self) -> Result<(), AzError> {
-        if self.peek_kind() == Some(TokenKind::Semicolon) {
-            self.advance();
-        }
+        if self.peek_kind() == Some(TokenKind::Semicolon) { self.advance(); }
         Ok(())
     }
 
@@ -298,10 +346,7 @@ impl Parser {
 }
 
 fn prefix_binding_power(op: UnOp) -> ((), u8) {
-    match op {
-        UnOp::Neg => ((), 9),
-        UnOp::Not => ((), 9),
-    }
+    match op { UnOp::Neg => ((), 9), UnOp::Not => ((), 9) }
 }
 
 fn infix_binding_power(op: BinOp) -> (u8, u8) {

@@ -94,6 +94,18 @@ impl Checker {
                 }
                 type_
             }
+            Stmt::Class { name, fields, methods } => {
+                for method in methods {
+                    if let Stmt::Func { name: mname, params, .. } = method {
+                        let mut all_params = vec![
+                            Param { name: Ident { name: "self".to_string(), span: name.span }, type_annotation: Some(azurite_parser::ast::Type::Name(name.name.clone())) }
+                        ];
+                        all_params.extend(params.iter().cloned());
+                    }
+                    self.check_stmt(method);
+                }
+                None
+            }
             Stmt::Func { name, params, return_type, body } => {
                 self.scope.push();
 
@@ -187,6 +199,18 @@ impl Checker {
             Expr::Char(_) => Some(Type::Int),
             Expr::Bool(_) => Some(Type::Bool),
             Expr::Null => Some(Type::Null),
+            Expr::Self_ => {
+                // self type resolved from method context
+                Some(Type::Void)
+            }
+            Expr::FieldAccess { obj, field } => {
+                self.check_expr(obj)
+            }
+            Expr::MethodCall { obj, method, args } => {
+                self.check_expr(obj);
+                for arg in args { self.check_expr(arg); }
+                Some(Type::Void)
+            }
             Expr::Ident(ident) => {
                 match self.scope.lookup(&ident.name) {
                     Some(sym) => Some(sym.type_.clone()),

@@ -239,6 +239,8 @@ impl Lexer {
             "import" => TokenKind::Import,
             "struct" => TokenKind::Struct,
             "enum" => TokenKind::Enum,
+            "class" => TokenKind::Class,
+            "self" => TokenKind::Self_,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             "null" => TokenKind::Null,

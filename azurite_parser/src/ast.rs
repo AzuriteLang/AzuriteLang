@@ -21,6 +21,11 @@ pub enum Stmt {
         return_type: Option<Type>,
         body: Box<Expr>,
     },
+    Class {
+        name: Ident,
+        fields: Vec<ClassField>,
+        methods: Vec<Stmt>,
+    },
     If {
         condition: Box<Expr>,
         then_branch: Box<Expr>,
@@ -37,6 +42,12 @@ pub enum Stmt {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ClassField {
+    pub name: Ident,
+    pub type_: Type,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Int(i64),
     Float(f64),
@@ -45,6 +56,7 @@ pub enum Expr {
     Bool(bool),
     Null,
     Ident(Ident),
+    Self_,
     Binary {
         left: Box<Expr>,
         op: BinOp,
@@ -57,6 +69,15 @@ pub enum Expr {
     Call {
         callee: Box<Expr>,
         args: Vec<Expr>,
+    },
+    MethodCall {
+        obj: Box<Expr>,
+        method: String,
+        args: Vec<Expr>,
+    },
+    FieldAccess {
+        obj: Box<Expr>,
+        field: String,
     },
     Block(Vec<Stmt>),
     If {
@@ -91,24 +112,10 @@ pub enum Type {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BinOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-    Eq,
-    Neq,
-    Lt,
-    Gt,
-    Le,
-    Ge,
-    And,
-    Or,
-    BitAnd,
-    BitOr,
-    BitXor,
-    Shl,
-    Shr,
+    Add, Sub, Mul, Div, Mod,
+    Eq, Neq, Lt, Gt, Le, Ge,
+    And, Or,
+    BitAnd, BitOr, BitXor, Shl, Shr,
     Assign,
 }
 

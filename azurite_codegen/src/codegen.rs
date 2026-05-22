@@ -15,7 +15,9 @@ pub struct CodeGen<'ctx> {
     module: Module<'ctx>,
     builder: Builder<'ctx>,
     variables: HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>)>,
+    struct_types: HashMap<String, (Vec<BasicTypeEnum<'ctx>>, inkwell::types::StructType<'ctx>)>,
     function: Option<FunctionValue<'ctx>>,
+    self_ptr: Option<PointerValue<'ctx>>,
     printf: Option<FunctionValue<'ctx>>,
 }
 
@@ -28,7 +30,9 @@ impl<'ctx> CodeGen<'ctx> {
             module,
             builder,
             variables: HashMap::new(),
+            struct_types: HashMap::new(),
             function: None,
+            self_ptr: None,
             printf: None,
         }
     }
@@ -95,6 +99,83 @@ impl<'ctx> CodeGen<'ctx> {
                 }
 
                 self.function = None;
+                self.self_ptr = None;
+                Ok(None)
+            }
+            Stmt::Class { name, fields, methods } => {
+                let member_types: Vec<BasicTypeEnum> = fields.iter()
+                    .map(|f| match &f.type_ {
+                        azurite_parser::ast::Type::Name(n) if n == "string" => self.context.ptr_type(inkwell::AddressSpace::default()).into(),
+                        azurite_parser::ast::Type::Name(n) if n == "int" => self.context.i64_type().into(),
+                        azurite_parser::ast::Type::Name(n) if n == "float" => self.context.f64_type().into(),
+                        azurite_parser::ast::Type::Name(n) if n == "bool" => self.context.i64_type().into(),
+                        _ => self.context.i64_type().into(),
+                    })
+                    .collect();
+
+                let struct_name = format!("struct.{}", name.name);
+                let llvm_struct = self.context.opaque_struct_type(&struct_name);
+                llvm_struct.set_body(&member_types, false);
+                self.struct_types.insert(name.name.clone(), (member_types, llvm_struct));
+
+                for method in methods {
+                    if let Stmt::Func { name: mname, params, return_type, body } = method {
+                        let self_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                        let mut param_types: Vec<BasicMetadataTypeEnum> = vec![self_type.into()];
+                        for p in params {
+                            param_types.push(match &p.type_annotation {
+                                Some(azurite_parser::ast::Type::Name(n)) if n == "string" => self.context.ptr_type(inkwell::AddressSpace::default()).into(),
+                                Some(azurite_parser::ast::Type::Name(n)) if n == "int" => self.context.i64_type().into(),
+                                Some(azurite_parser::ast::Type::Name(n)) if n == "float" => self.context.f64_type().into(),
+                                Some(azurite_parser::ast::Type::Name(n)) if n == "bool" => self.context.i64_type().into(),
+                                _ => self.context.i64_type().into(),
+                            });
+                        }
+
+                        let is_void = return_type.is_none() || matches!(return_type, Some(azurite_parser::ast::Type::Name(ref n)) if n == "void" || n == "none");
+                        let fn_name = format!("{}_{}", name.name, mname.name);
+
+                        let fn_val = if is_void {
+                            let fn_type = self.context.void_type().fn_type(&param_types, false);
+                            self.module.add_function(&fn_name, fn_type, None)
+                        } else {
+                            let fn_type = self.context.i64_type().fn_type(&param_types, false);
+                            self.module.add_function(&fn_name, fn_type, None)
+                        };
+
+                        let entry = self.context.append_basic_block(fn_val, "entry");
+                        self.builder.position_at_end(entry);
+                        self.function = Some(fn_val);
+
+                        if let Some(self_param) = fn_val.get_nth_param(0) {
+                            let self_alloca = self.create_entry_alloca(self_type.into(), "self");
+                            self.builder.build_store(self_alloca, self_param).unwrap();
+                            self.self_ptr = Some(self_alloca);
+                        }
+
+                        for (i, param) in params.iter().enumerate() {
+                            if let Some(pval) = fn_val.get_nth_param((i + 1) as u32) {
+                                let ptr = self.create_entry_alloca(pval.get_type(), &param.name.name);
+                                self.builder.build_store(ptr, pval).unwrap();
+                                self.variables.insert(param.name.name.clone(), (ptr, pval.get_type()));
+                            }
+                        }
+
+                        self.compile_block_stmts(body, true)?;
+                        let has_term = self.builder.get_insert_block()
+                            .and_then(|b| b.get_last_instruction()).is_some();
+                        if !has_term {
+                            if is_void {
+                                self.builder.build_return(None).unwrap();
+                            } else {
+                                self.builder.build_return(Some(&self.context.i64_type().const_zero())).unwrap();
+                            }
+                        }
+
+                        self.function = None;
+                        self.self_ptr = None;
+                    }
+                }
                 Ok(None)
             }
             Stmt::Return { value } => {
@@ -191,6 +272,34 @@ impl<'ctx> CodeGen<'ctx> {
             Expr::Bool(b) => Ok(self.context.bool_type().const_int(*b as u64, false).into()),
             Expr::Null => Ok(self.context.i64_type().const_zero().into()),
             Expr::Char(c) => Ok(self.context.i64_type().const_int(*c as u64, false).into()),
+            Expr::Self_ => {
+                match self.self_ptr {
+                    Some(ptr) => {
+                        let loaded = self.builder.build_load(
+                            self.context.ptr_type(inkwell::AddressSpace::default()),
+                            ptr, "self",
+                        ).unwrap();
+                        Ok(loaded)
+                    }
+                    None => Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), "'self' used outside method")),
+                }
+            }
+            Expr::FieldAccess { obj, .. } => {
+                let _ = self.compile_expr(obj)?;
+                Ok(self.context.i64_type().const_zero().into())
+            }
+            Expr::MethodCall { obj, method, args } => {
+                let _obj_val = self.compile_expr(obj)?;
+                let compiled_args = args.iter()
+                    .map(|a| self.compile_expr(a))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                // Method calls need class name context; simplified for now
+                let _meta_args: Vec<BasicMetadataValueEnum> = compiled_args.iter()
+                    .map(|a| (*a).into())
+                    .collect();
+                Ok(self.context.i64_type().const_zero().into())
+            }
             Expr::Ident(ident) => {
                 if let Some((ptr, ty)) = self.variables.get(&ident.name) {
                     let loaded = self.builder.build_load(*ty, *ptr, &ident.name).unwrap();
