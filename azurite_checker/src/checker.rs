@@ -8,6 +8,7 @@ pub struct Checker {
     errors: Vec<AzError>,
     in_function: bool,
     expected_return: Option<Type>,
+    generic_classes: std::collections::HashMap<String, (Vec<String>, Vec<ClassField>, Vec<Stmt>)>,
 }
 
 impl Checker {
@@ -17,6 +18,7 @@ impl Checker {
             errors: Vec::new(),
             in_function: false,
             expected_return: None,
+            generic_classes: std::collections::HashMap::new(),
         };
         checker.register_builtins();
         checker
@@ -104,11 +106,16 @@ impl Checker {
             Stmt::Enum { .. } => {
                 None
             }
-            Stmt::Class { methods, .. } => {
-                for method in methods {
-                    self.check_stmt(method);
+            Stmt::Class { name, type_params, fields, methods } => {
+                if !type_params.is_empty() {
+                    self.generic_classes.insert(name.name.clone(), (type_params.clone(), fields.clone(), methods.clone()));
+                    None
+                } else {
+                    for method in methods {
+                        self.check_stmt(method);
+                    }
+                    None
                 }
-                None
             }
             Stmt::Func { name, params, return_type, body } => {
                 self.scope.push();
@@ -406,9 +413,32 @@ impl Checker {
         }
     }
 
-    fn resolve_type(&self, type_: &azurite_parser::ast::Type) -> Option<Type> {
+    fn resolve_type(&mut self, type_: &azurite_parser::ast::Type) -> Option<Type> {
         match type_ {
             azurite_parser::ast::Type::Name(name) => crate::types::Type::from_name(name),
+            azurite_parser::ast::Type::Generic { name, params } => {
+                if let Some((_type_params, _fields, methods)) = self.generic_classes.get(name).cloned() {
+                    let concrete_name = format!("{}_{}", name, params.iter().map(|p| {
+                        match p { azurite_parser::ast::Type::Name(n) => n.clone(), _ => "any".to_string() }
+                    }).collect::<Vec<_>>().join("_"));
+                    let cn = concrete_name.clone();
+                    // Register concrete class methods
+                    for method in &methods {
+                        if let Stmt::Func { name: mname, .. } = method {
+                            let fn_name = format!("{}_{}", cn, mname.name);
+                            let sym = Symbol {
+                                name: fn_name.clone(),
+                                kind: SymbolKind::Function,
+                                type_: Type::Func { params: vec![], ret: Box::new(Type::Void) },
+                            };
+                            self.scope.insert(&fn_name, sym).ok();
+                        }
+                    }
+                    crate::types::Type::from_name(&concrete_name).or(Some(Type::Void))
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
