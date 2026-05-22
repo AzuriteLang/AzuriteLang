@@ -139,15 +139,16 @@ pub fn compile_expr<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
 
             let array_type = cg.context.i64_type().array_type(count);
 
-            let alloca = cg.create_entry_alloca(array_type.into(), "arr");
+            // Heap allocation
+            let ptr = cg.builder.build_malloc(array_type, "arr").unwrap();
             for (i, elem) in elems.iter().enumerate() {
                 let val = cg.compile_expr(elem)?;
-                let ptr = unsafe {
-                    cg.builder.build_gep(array_type, alloca, &[cg.context.i32_type().const_int(i as u64, false)], "idx").unwrap()
+                let gep = unsafe {
+                    cg.builder.build_gep(array_type, ptr, &[cg.context.i32_type().const_int(i as u64, false)], "idx").unwrap()
                 };
-                cg.builder.build_store(ptr, val).unwrap();
+                cg.builder.build_store(gep, val).unwrap();
             }
-            Ok(alloca.into())
+            Ok(ptr.into())
         }
         Expr::Index { obj, index } => {
             let obj_val = cg.compile_expr(obj)?;
@@ -255,9 +256,24 @@ fn compile_binary<'ctx>(cg: &CodeGen<'ctx>, lhs: BasicValueEnum<'ctx>, rhs: Basi
                 };
                 Ok(val)
             }
-            (BasicValueEnum::PointerValue(l), BasicValueEnum::PointerValue(_r)) if op == BinOp::Add => {
-                // String concatenation: return the first string for now
-                Ok(l.into())
+            (BasicValueEnum::PointerValue(l), BasicValueEnum::PointerValue(r)) if op == BinOp::Add => {
+                let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
+                let i64_ty = cg.context.i64_type();
+
+                // Use sprintf(dest, "%s%s", left, right)
+                let sprintf_type = i64_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], true);
+                cg.module.add_function("sprintf", sprintf_type, None);
+
+                let buf = cg.builder.build_alloca(i64_ty.array_type(256), "strbuf").unwrap();
+                let fmt_str = cg.builder.build_global_string_ptr("%s%s", "concatfmt").unwrap();
+
+                let result = cg.builder.build_call(
+                    cg.module.get_function("sprintf").unwrap(),
+                    &[buf.into(), fmt_str.as_pointer_value().into(), l.into(), r.into()],
+                    "sprintf",
+                ).unwrap();
+
+                Ok(buf.into())
             }
         _ => Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), "type mismatch")),
     }
@@ -345,8 +361,24 @@ fn compile_to_string<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<Basi
 }
 
 fn compile_len<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let _val = cg.compile_expr(&args[0])?;
-    Ok(cg.context.i64_type().const_int(0, false).into())
+    let val = cg.compile_expr(&args[0])?;
+    let ptr = val.into_pointer_value();
+
+    let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
+    let i64_ty = cg.context.i64_type();
+    let strlen_type = i64_ty.fn_type(&[ptr_ty.into()], false);
+    cg.module.add_function("strlen", strlen_type, None);
+
+    let result = cg.builder.build_call(
+        cg.module.get_function("strlen").unwrap(),
+        &[ptr.into()],
+        "len",
+    ).unwrap();
+
+    Ok(match result.try_as_basic_value() {
+        inkwell::values::ValueKind::Basic(bv) => bv,
+        _ => cg.context.i64_type().const_zero().into(),
+    })
 }
 
 fn compile_int_cast<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {

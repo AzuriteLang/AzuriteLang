@@ -1,14 +1,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use azurite_parser::ast::Program;
-
 use clap::Parser as ClapParser;
 
 use azurite_checker::Checker;
 use azurite_codegen::CodeGen;
 use azurite_errors::Diagnostic;
 use azurite_lexer::Lexer;
+use azurite_parser::ast::{Program, Stmt};
 use azurite_parser::Parser;
 
 #[cfg(feature = "llvm")]
@@ -50,14 +49,27 @@ fn read_file(path: &PathBuf) -> Result<String, String> {
     fs::read_to_string(path).map_err(|e| format!("cannot read {}: {}", path.display(), e))
 }
 
-fn resolve_module(source: &str) -> Result<Program, String> {
+fn resolve_module(source: &str, base_path: &Path) -> Result<Program, String> {
     let (mut parser, _tokens) = Parser::from_source(source).map_err(|e| e.to_string())?;
-    parser.parse_program().map_err(|e| e.to_string())
+    let program = parser.parse_program().map_err(|e| e.to_string())?;
+    let mut resolved = Vec::new();
+    for stmt in program.statements {
+        match stmt {
+            Stmt::Import { path, .. } => {
+                let import_path = base_path.parent().unwrap_or(Path::new(".")).join(&path);
+                let import_source = read_file(&import_path.to_path_buf())?;
+                let import_prog = resolve_module(&import_source, &import_path)?;
+                resolved.extend(import_prog.statements);
+            }
+            other => resolved.push(other),
+        }
+    }
+    Ok(Program { statements: resolved })
 }
 
 fn resolve_main(file: &Path) -> Result<(Program, String), String> {
     let source = read_file(&file.to_path_buf())?;
-    let program = resolve_module(&source)?;
+    let program = resolve_module(&source, file)?;
     Ok((program, source))
 }
 

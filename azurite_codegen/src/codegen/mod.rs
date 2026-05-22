@@ -4,8 +4,7 @@ pub mod builtin;
 
 use std::collections::HashMap;
 
-use azurite_errors::{AzError, ErrorKind};
-use azurite_lexer::Span;
+use azurite_errors::AzError;
 use azurite_parser::ast::*;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
