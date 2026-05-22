@@ -1,4 +1,4 @@
-use crate::ast::{BinOp, Ident, Stmt, Type, UnOp};
+use crate::ast::{BinOp, Ident, Stmt, UnOp};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pattern {

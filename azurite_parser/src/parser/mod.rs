@@ -1,14 +1,11 @@
 use azurite_errors::AzError;
 use azurite_lexer::TokenKind;
-use crate::ast::*;
+use crate::ast::{BinOp, Ident, Program, UnOp};
 
 mod stmt;
-mod expr;
+pub mod expr;
 mod pattern;
-mod type_;
-
-use stmt::*;
-use expr::*;
+pub mod type_;
 
 pub struct Parser {
     tokens: Vec<azurite_lexer::Token>,
