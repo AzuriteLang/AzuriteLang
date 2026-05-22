@@ -119,17 +119,22 @@ impl<'ctx> CodeGen<'ctx> {
             Stmt::Import { .. } | Stmt::Enum { .. } => {
                 Ok(None)
             }
-            Stmt::For { name, iterable: _iterable, body } => {
+            Stmt::For { name, iterable, body } => {
                 let cf = self.function.unwrap();
+                let i64_ty = self.context.i64_type();
 
-                // Check for range: for i in 0..10
-                // The iterable should produce start and end values
-                let start: BasicValueEnum = self.context.i64_type().const_zero().into();
-                let end: BasicValueEnum = self.context.i64_type().const_int(10, false).into();
+                // Extract start/end from range expression
+                let (start_val, end_val) = match iterable.as_ref() {
+                    Expr::Range { start, end } => {
+                        (self.compile_expr(start)?.into_int_value(),
+                         self.compile_expr(end)?.into_int_value())
+                    }
+                    _ => (i64_ty.const_zero(), i64_ty.const_int(10, false)),
+                };
 
-                let i_ptr = self.create_entry_alloca(self.context.i64_type().into(), &name.name);
-                self.builder.build_store(i_ptr, start).unwrap();
-                self.variables.insert(name.name.clone(), (i_ptr, self.context.i64_type().into()));
+                let i_ptr = self.create_entry_alloca(i64_ty.into(), &name.name);
+                self.builder.build_store(i_ptr, start_val).unwrap();
+                self.variables.insert(name.name.clone(), (i_ptr, i64_ty.into()));
 
                 let cond_bb = self.context.append_basic_block(cf, "for_cond");
                 let body_bb = self.context.append_basic_block(cf, "for_body");
@@ -138,27 +143,23 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder.build_unconditional_branch(cond_bb).unwrap();
                 self.builder.position_at_end(cond_bb);
 
-                let i_val = self.builder.build_load(self.context.i64_type(), i_ptr, "i").unwrap();
-                let end_i = match end {
-                    BasicValueEnum::IntValue(v) => v,
-                    _ => self.context.i64_type().const_int(10, false),
-                };
+                let i_val = self.builder.build_load(i64_ty, i_ptr, "i").unwrap();
                 let cmp = self.builder.build_int_compare(
-                    inkwell::IntPredicate::SLT, i_val.into_int_value(), end_i, "forcmp",
+                    inkwell::IntPredicate::SLT, i_val.into_int_value(), end_val, "forcmp",
                 ).unwrap();
                 self.builder.build_conditional_branch(cmp, body_bb, after_bb).unwrap();
 
                 self.builder.position_at_end(body_bb);
                 self.compile_block_stmts(body, false)?;
-
-                let i_next = self.builder.build_load(self.context.i64_type(), i_ptr, "i").unwrap();
-                let one = self.context.i64_type().const_int(1, false);
-                let i_inc = self.builder.build_int_add(i_next.into_int_value(), one, "iinc").unwrap();
-                self.builder.build_store(i_ptr, i_inc).unwrap();
-
-                self.builder.build_unconditional_branch(cond_bb).unwrap();
+                if !self.has_terminator() {
+                    let i_next = self.builder.build_load(i64_ty, i_ptr, "i").unwrap();
+                    let one = i64_ty.const_int(1, false);
+                    let i_inc = self.builder.build_int_add(i_next.into_int_value(), one, "iinc").unwrap();
+                    self.builder.build_store(i_ptr, i_inc).unwrap();
+                    self.builder.build_unconditional_branch(cond_bb).unwrap();
+                }
                 self.builder.position_at_end(after_bb);
-                Ok(Some(self.context.i64_type().const_zero().into()))
+                Ok(Some(i64_ty.const_zero().into()))
             }
             Stmt::Return { value } => {
                 if let Some(v) = value {

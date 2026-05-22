@@ -136,7 +136,6 @@ pub fn compile_expr<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
             if count == 0 { return Ok(cg.context.i64_type().const_zero().into()); }
 
             let i64_ty = cg.context.i64_type();
-            let array_type = i64_ty.array_type(count);
             let size = i64_ty.const_int(count as u64, false);
 
             let ptr = cg.builder.build_array_malloc(i64_ty, size, "arr").unwrap();
@@ -171,21 +170,44 @@ pub fn compile_expr<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
             let tag_val = cg.context.i8_type().const_int(tag % 256, false);
             Ok(tag_val.into())
         }
-        Expr::Match { value: _val, arms } => {
-            // Simplified: execute all arm bodies sequentially
+        Expr::Match { value, arms } => {
+            let val = cg.compile_expr(value)?.into_int_value();
             let cf = cg.function.unwrap();
             let after_bb = cg.context.append_basic_block(cf, "match_after");
+            let i64_ty = cg.context.i64_type();
+            let start_block = cg.builder.get_insert_block().unwrap();
 
-            for arm in arms {
-                let arm_bb = cg.context.append_basic_block(cf, "match_arm");
-                cg.builder.build_unconditional_branch(arm_bb).unwrap();
-                cg.builder.position_at_end(arm_bb);
-                cg.compile_expr(&arm.body)?;
-                if !cg.has_terminator() { cg.builder.build_unconditional_branch(after_bb).unwrap(); }
+            for (i, arm) in arms.iter().enumerate() {
+                let is_last = i + 1 == arms.len();
+                let arm_bb = cg.context.append_basic_block(cf, &format!("match_arm{}", i));
+
+                if !is_last {
+                    let rest_bb = cg.context.append_basic_block(cf, &format!("match_rest{}", i));
+                    let arm_val = i64_ty.const_int(i as u64, false);
+                    if i == 0 {
+                        cg.builder.position_at_end(start_block);
+                    }
+                    let cmp = cg.builder.build_int_compare(
+                        inkwell::IntPredicate::EQ, val, arm_val, "matchcmp",
+                    ).unwrap();
+                    cg.builder.build_conditional_branch(cmp, arm_bb, rest_bb).unwrap();
+
+                    cg.builder.position_at_end(arm_bb);
+                    cg.compile_expr(&arm.body)?;
+                    if !cg.has_terminator() { cg.builder.build_unconditional_branch(after_bb).unwrap(); }
+
+                    cg.builder.position_at_end(rest_bb);
+                } else {
+                    // Wildcard: always branch from current block
+                    cg.builder.build_unconditional_branch(arm_bb).unwrap();
+                    cg.builder.position_at_end(arm_bb);
+                    cg.compile_expr(&arm.body)?;
+                    if !cg.has_terminator() { cg.builder.build_unconditional_branch(after_bb).unwrap(); }
+                }
             }
 
             cg.builder.position_at_end(after_bb);
-            Ok(cg.context.i64_type().const_zero().into())
+            Ok(i64_ty.const_zero().into())
         }
         Expr::Range { start, end } => {
             let _s = cg.compile_expr(start)?;
@@ -249,10 +271,40 @@ fn compile_binary<'ctx>(cg: &CodeGen<'ctx>, lhs: BasicValueEnum<'ctx>, rhs: Basi
                 };
                 Ok(val)
             }
-            (BasicValueEnum::PointerValue(l), BasicValueEnum::PointerValue(_r)) if op == BinOp::Add => {
-                // String concatenation: return left string for now
-                // TODO: proper concat with malloc + memcpy
-                Ok(l.into())
+            (BasicValueEnum::PointerValue(l), BasicValueEnum::PointerValue(r)) if op == BinOp::Add => {
+                // String concatenation: buf = malloc(strlen(l) + strlen(r) + 1); strcpy(buf, l); strcat(buf, r)
+                let i64_ty = cg.context.i64_type();
+                let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
+
+                let strlen_ty = i64_ty.fn_type(&[ptr_ty.into()], false);
+                cg.module.add_function("strlen", strlen_ty, None);
+                let strcpy_ty = ptr_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], false);
+                cg.module.add_function("strcpy", strcpy_ty, None);
+                let strcat_ty = ptr_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], false);
+                cg.module.add_function("strcat", strcat_ty, None);
+
+                let strlen = cg.module.get_function("strlen").unwrap();
+
+                let len_l = cg.builder.build_call(strlen, &[l.into()], "llen").unwrap();
+                let len_r = cg.builder.build_call(strlen, &[r.into()], "rlen").unwrap();
+                let ll = len_l.try_as_basic_value().unwrap_basic().into_int_value();
+                let lr = len_r.try_as_basic_value().unwrap_basic().into_int_value();
+                let total = cg.builder.build_int_add(ll, lr, "totlen").unwrap();
+                let one = i64_ty.const_int(1, false);
+                let size = cg.builder.build_int_add(total, one, "mallocsize").unwrap();
+
+                let malloc_ty = ptr_ty.fn_type(&[i64_ty.into()], false);
+                cg.module.add_function("malloc", malloc_ty, None);
+                let buf = cg.builder.build_call(
+                    cg.module.get_function("malloc").unwrap(), &[size.into()], "strbuf",
+                ).unwrap().try_as_basic_value().unwrap_basic().into_pointer_value();
+
+                let strcpy_f = cg.module.get_function("strcpy").unwrap();
+                cg.builder.build_call(strcpy_f, &[buf.into(), l.into()], "cpy").unwrap();
+                let strcat_f = cg.module.get_function("strcat").unwrap();
+                cg.builder.build_call(strcat_f, &[buf.into(), r.into()], "cat").unwrap();
+
+                Ok(buf.into())
             }
         _ => Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), "type mismatch")),
     }
