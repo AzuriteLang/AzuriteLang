@@ -2,16 +2,35 @@ use azurite_parser::ast::*;
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue};
 use crate::codegen::CodeGen;
 
+/// Returns true if the expression is known to produce a boolean value
+fn is_bool_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Bool(_) => true,
+        Expr::Binary { op, .. } => matches!(op, BinOp::Eq | BinOp::Neq | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge | BinOp::And | BinOp::Or),
+        Expr::Unary { op: UnOp::Not, .. } => true,
+        Expr::Call { callee, .. } => {
+            if let Expr::Ident(i) = callee.as_ref() {
+                matches!(i.name.as_str(), "is_prime" | "has_xxx" /* add known bool funcs */)
+            } else { false }
+        }
+        _ => false,
+    }
+}
+
 pub fn compile_print<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, azurite_errors::AzError> {
     let printf = get_or_declare_printf(cg);
 
     for arg_expr in args {
-        // Check for boolean literals at AST level
-        if let Expr::Bool(b) = arg_expr {
-            let s = if *b { "true" } else { "false" };
-            let g = cg.builder.build_global_string_ptr(s, "boolstr").unwrap();
-            let fmt = cg.builder.build_global_string_ptr("%s", "bfmt").unwrap();
-            cg.builder.build_call(printf, &[fmt.as_pointer_value().into(), g.as_pointer_value().into()], "printtmp").unwrap();
+        if is_bool_expr(arg_expr) {
+            let val = cg.compile_expr(arg_expr)?;
+            let zero = cg.context.i64_type().const_zero();
+            let iv = val.into_int_value();
+            let cmp = cg.builder.build_int_compare(inkwell::IntPredicate::NE, iv, zero, "boolchk").unwrap();
+            let true_str = cg.builder.build_global_string_ptr("true", "ts").unwrap();
+            let false_str = cg.builder.build_global_string_ptr("false", "fs").unwrap();
+            let sel = cg.builder.build_select(cmp, true_str.as_pointer_value(), false_str.as_pointer_value(), "boolsel").unwrap();
+            let fmt = cg.builder.build_global_string_ptr("%s", "bf").unwrap();
+            cg.builder.build_call(printf, &[fmt.as_pointer_value().into(), sel.into()], "pt").unwrap();
         } else {
             let val = cg.compile_expr(arg_expr)?;
             let (fmt, data) = get_print_format(cg, &val);
