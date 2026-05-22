@@ -258,6 +258,7 @@ impl Lexer {
             "enum" => TokenKind::Enum,
             "class" => TokenKind::Class,
             "self" => TokenKind::Self_,
+            "super" => TokenKind::Super,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             "null" => TokenKind::Null,

@@ -114,6 +114,10 @@ impl Parser {
             self.expect(TokenKind::Greater, "expected '>' after generic params")?;
             params
         } else { Vec::new() };
+        let parent = if self.peek_kind() == Some(TokenKind::Colon) {
+            self.advance();
+            Some(Box::new(self.parse_type()?))
+        } else { None };
         self.expect(TokenKind::LBrace, "expected '{' after class name")?;
 
         let mut fields = Vec::new();
@@ -126,7 +130,7 @@ impl Parser {
             }
         }
         self.expect(TokenKind::RBrace, "expected '}' after class body")?;
-        Ok(Stmt::Class { name, type_params, fields, methods })
+        Ok(Stmt::Class { name, type_params, parent, fields, methods })
     }
 
     fn parse_class_member(&mut self, fields: &mut Vec<ClassField>, methods: &mut Vec<Stmt>) -> Result<(), AzError> {
@@ -301,6 +305,7 @@ impl Parser {
             Some(TokenKind::False) => { self.advance(); Expr::Bool(false) }
             Some(TokenKind::Null) => { self.advance(); Expr::Null }
             Some(TokenKind::Self_) => { self.advance(); Expr::Self_ }
+            Some(TokenKind::Super) => { self.advance(); Expr::Super }
             Some(TokenKind::Ident(name)) => {
                 let ident = Ident { name: name.clone(), span: self.current_span() };
                 self.advance();

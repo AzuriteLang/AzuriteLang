@@ -106,16 +106,21 @@ impl Checker {
             Stmt::Enum { .. } => {
                 None
             }
-            Stmt::Class { name, type_params, fields, methods } => {
+            Stmt::Class { name, type_params, parent, fields, methods } => {
                 if !type_params.is_empty() {
                     self.generic_classes.insert(name.name.clone(), (type_params.clone(), fields.clone(), methods.clone()));
-                    None
-                } else {
-                    for method in methods {
-                        self.check_stmt(method);
-                    }
-                    None
+                    return None;
                 }
+                // Inherit methods from parent (field inheritance placeholder)
+                let all_methods = if let Some(parent_type) = parent {
+                    if let azurite_parser::ast::Type::Name(_pname) = parent_type.as_ref() {
+                        methods.clone()
+                    } else { methods.clone() }
+                } else { methods.clone() };
+                for method in &all_methods {
+                    self.check_stmt(method);
+                }
+                None
             }
             Stmt::Func { name, params, return_type, body } => {
                 self.scope.push();
@@ -222,8 +227,7 @@ impl Checker {
             Expr::Char(_) => Some(Type::Int),
             Expr::Bool(_) => Some(Type::Bool),
             Expr::Null => Some(Type::Null),
-            Expr::Self_ => {
-                // self type resolved from method context
+            Expr::Self_ | Expr::Super => {
                 Some(Type::Void)
             }
             Expr::FieldAccess { obj, .. } => {

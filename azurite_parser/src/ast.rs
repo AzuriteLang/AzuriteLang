@@ -24,6 +24,7 @@ pub enum Stmt {
     Class {
         name: Ident,
         type_params: Vec<String>,
+        parent: Option<Box<Type>>,
         fields: Vec<ClassField>,
         methods: Vec<Stmt>,
     },
@@ -94,6 +95,7 @@ pub enum Expr {
     Null,
     Ident(Ident),
     Self_,
+    Super,
     Binary {
         left: Box<Expr>,
         op: BinOp,

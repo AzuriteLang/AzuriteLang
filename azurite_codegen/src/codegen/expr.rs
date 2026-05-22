@@ -16,7 +16,7 @@ pub fn compile_expr<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
         Expr::Bool(b) => Ok(cg.context.i64_type().const_int(*b as u64, false).into()),
         Expr::Null => Ok(cg.context.i64_type().const_zero().into()),
         Expr::Char(c) => Ok(cg.context.i64_type().const_int(*c as u64, false).into()),
-        Expr::Self_ => {
+        Expr::Self_ | Expr::Super => {
             match cg.self_ptr {
                 Some(ptr) => {
                     let loaded = cg.builder.build_load(
