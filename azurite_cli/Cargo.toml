@@ -13,6 +13,7 @@ azurite_lexer = { path = "../azurite_lexer" }
 azurite_parser = { path = "../azurite_parser" }
 azurite_codegen = { path = "../azurite_codegen" }
 azurite_checker = { path = "../azurite_checker" }
+azurite_errors = { path = "../azurite_errors" }
 clap = { version = "4", features = ["derive"] }
 
 [features]

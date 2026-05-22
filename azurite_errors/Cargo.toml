@@ -1,5 +1,5 @@
 [package]
-name = "azurite_parser"
+name = "azurite_errors"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,4 +9,3 @@ test = false
 
 [dependencies]
 azurite_lexer = { path = "../azurite_lexer" }
-azurite_errors = { path = "../azurite_errors" }

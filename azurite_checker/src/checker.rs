@@ -1,10 +1,11 @@
+use azurite_errors::{AzError, ErrorKind};
+use azurite_parser::ast::*;
 use crate::symbol::{Scope, Symbol, SymbolKind};
 use crate::types::Type;
-use azurite_parser::ast::*;
 
 pub struct Checker {
     scope: Scope,
-    errors: Vec<String>,
+    errors: Vec<AzError>,
     in_function: bool,
     expected_return: Option<Type>,
 }
@@ -38,7 +39,7 @@ impl Checker {
         }
     }
 
-    pub fn check_program(&mut self, program: &Program) -> Result<(), Vec<String>> {
+    pub fn check_program(&mut self, program: &Program) -> Result<(), Vec<AzError>> {
         self.errors.clear();
         for stmt in &program.statements {
             self.check_stmt(stmt);
@@ -50,11 +51,9 @@ impl Checker {
         }
     }
 
-    fn error(&mut self, msg: String) {
-        self.errors.push(msg);
+    fn error(&mut self, span: azurite_lexer::Span, msg: impl Into<String>) {
+        self.errors.push(AzError::new(ErrorKind::TypeError, span, msg));
     }
-
-    // --- Statements ---
 
     fn check_stmt(&mut self, stmt: &Stmt) -> Option<Type> {
         match stmt {
@@ -66,7 +65,7 @@ impl Checker {
                 let type_ = match (inferred, declared) {
                     (Some(inf), Some(dec)) => {
                         if inf != dec {
-                            self.error(format!(
+                            self.error(name.span, format!(
                                 "type mismatch: expected '{}', got '{}' in 'let {}'",
                                 dec, inf, name.name
                             ));
@@ -75,7 +74,7 @@ impl Checker {
                     }
                     (Some(inf), None) => {
                         if inf == Type::Null {
-                            self.error(format!(
+                            self.error(name.span, format!(
                                 "cannot infer type for 'let {}', add explicit type annotation",
                                 name.name
                             ));
@@ -91,13 +90,12 @@ impl Checker {
                         name: name.name.clone(),
                         kind: SymbolKind::Variable,
                         type_: t.clone(),
-                    }).unwrap_or_else(|e| self.error(e));
+                    }).unwrap_or_else(|e| self.error(name.span, e));
                 }
                 type_
             }
             Stmt::Func { name, params, return_type, body } => {
                 self.scope.push();
-                let self_name = name.name.clone();
 
                 for param in params {
                     let type_ = param.type_annotation.as_ref()
@@ -107,7 +105,7 @@ impl Checker {
                         name: param.name.name.clone(),
                         kind: SymbolKind::Variable,
                         type_,
-                    }).unwrap_or_else(|e| self.error(e));
+                    }).unwrap_or_else(|e| self.error(param.name.span, e));
                 }
 
                 let ret_type = return_type.as_ref()
@@ -131,11 +129,11 @@ impl Checker {
                     ret: Box::new(ret_type),
                 };
 
-                self.scope.insert(&self_name, Symbol {
-                    name: self_name.clone(),
+                self.scope.insert(&name.name, Symbol {
+                    name: name.name.clone(),
                     kind: SymbolKind::Function,
                     type_: func_type,
-                }).unwrap_or_else(|e| self.error(e));
+                }).unwrap_or_else(|e| self.error(name.span, e));
 
                 None
             }
@@ -144,13 +142,17 @@ impl Checker {
                 if let Some(ref expected) = self.expected_return {
                     match val_type {
                         Some(ref actual) if *expected != *actual => {
-                            self.error(format!(
+                            let span = value.as_ref().map_or(
+                                azurite_lexer::Span::new(0, 0, 0, 0),
+                                |v| self.expr_span(v),
+                            );
+                            self.error(span, format!(
                                 "expected return type '{}', got '{}'",
-                                expected, *actual
+                                expected, actual
                             ));
                         }
                         None if *expected != Type::Void => {
-                            self.error(format!(
+                            self.error(azurite_lexer::Span::new(0, 0, 0, 0), format!(
                                 "expected return value of type '{}'",
                                 expected
                             ));
@@ -177,8 +179,6 @@ impl Checker {
         }
     }
 
-    // --- Expressions ---
-
     fn check_expr(&mut self, expr: &Expr) -> Option<Type> {
         match expr {
             Expr::Int(_) => Some(Type::Int),
@@ -191,7 +191,7 @@ impl Checker {
                 match self.scope.lookup(&ident.name) {
                     Some(sym) => Some(sym.type_.clone()),
                     None => {
-                        self.error(format!("undefined variable '{}' at line {}", ident.name, ident.span.line));
+                        self.error(ident.span, format!("undefined variable '{}'", ident.name));
                         None
                     }
                 }
@@ -210,17 +210,16 @@ impl Checker {
                 match callee_type {
                     Some(Type::Func { params, ret }) => {
                         if params.len() != args.len() {
-                            self.error(format!(
+                            self.error(azurite_lexer::Span::new(0, 0, 0, 0), format!(
                                 "expected {} arguments, got {}",
-                                params.len(),
-                                args.len()
+                                params.len(), args.len()
                             ));
                         }
                         for (i, arg) in args.iter().enumerate() {
                             let arg_type = self.check_expr(arg);
                             if let (Some(expected), Some(actual)) = (params.get(i), arg_type) {
                                 if expected != &actual {
-                                    self.error(format!(
+                                    self.error(azurite_lexer::Span::new(0, 0, 0, 0), format!(
                                         "argument {}: expected '{}', got '{}'",
                                         i + 1, expected, actual
                                     ));
@@ -230,7 +229,9 @@ impl Checker {
                         Some(*ret)
                     }
                     Some(other) => {
-                        self.error(format!("cannot call non-function type '{}'", other));
+                        self.error(azurite_lexer::Span::new(0, 0, 0, 0), format!(
+                            "cannot call non-function type '{}'", other
+                        ));
                         None
                     }
                     None => None,
@@ -259,6 +260,15 @@ impl Checker {
         }
     }
 
+    fn expr_span(&self, expr: &Expr) -> azurite_lexer::Span {
+        match expr {
+            Expr::Ident(ident) => ident.span,
+            Expr::Int(_) | Expr::Float(_) | Expr::String(_) | Expr::Char(_)
+                | Expr::Bool(_) | Expr::Null => azurite_lexer::Span::new(0, 0, 0, 0),
+            _ => azurite_lexer::Span::new(0, 0, 0, 0),
+        }
+    }
+
     fn check_binary_op(&mut self, l: Option<Type>, r: Option<Type>, op: BinOp) -> Option<Type> {
         let lt = l.clone().unwrap_or(Type::Void);
         let rt = r.clone().unwrap_or(Type::Void);
@@ -266,13 +276,9 @@ impl Checker {
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
                 if lt.is_numeric() && rt.is_numeric() {
-                    if lt == Type::Float || rt == Type::Float {
-                        Some(Type::Float)
-                    } else {
-                        Some(Type::Int)
-                    }
+                    Some(if lt == Type::Float || rt == Type::Float { Type::Float } else { Type::Int })
                 } else {
-                    self.error(format!("cannot apply '{}' to '{}' and '{}'", op, lt, rt));
+                    self.error(azurite_lexer::Span::new(0, 0, 0, 0), format!("cannot apply '{}' to '{}' and '{}'", op, lt, rt));
                     None
                 }
             }
@@ -280,7 +286,7 @@ impl Checker {
                 if lt == rt || (lt.is_numeric() && rt.is_numeric()) {
                     Some(Type::Bool)
                 } else {
-                    self.error(format!("cannot compare '{}' with '{}'", lt, rt));
+                    self.error(azurite_lexer::Span::new(0, 0, 0, 0), format!("cannot compare '{}' with '{}'", lt, rt));
                     None
                 }
             }
@@ -288,7 +294,7 @@ impl Checker {
                 if lt.is_numeric() && rt.is_numeric() {
                     Some(Type::Bool)
                 } else {
-                    self.error(format!("cannot compare '{}' with '{}'", lt, rt));
+                    self.error(azurite_lexer::Span::new(0, 0, 0, 0), format!("cannot compare '{}' with '{}'", lt, rt));
                     None
                 }
             }
@@ -296,15 +302,15 @@ impl Checker {
                 if lt == Type::Bool && rt == Type::Bool {
                     Some(Type::Bool)
                 } else {
-                    self.error(format!("cannot apply '{}' to '{}' and '{}'", op, lt, rt));
+                    self.error(azurite_lexer::Span::new(0, 0, 0, 0), format!("cannot apply '{}' to '{}' and '{}'", op, lt, rt));
                     None
                 }
             }
             BinOp::Assign => {
-                if lt == rt || (lt == Type::Null) {
-                    r.clone()
+                if lt == rt || lt == Type::Null {
+                    r
                 } else {
-                    self.error(format!("cannot assign '{}' to '{}'", rt, lt));
+                    self.error(azurite_lexer::Span::new(0, 0, 0, 0), format!("cannot assign '{}' to '{}'", rt, lt));
                     None
                 }
             }
@@ -312,7 +318,7 @@ impl Checker {
                 if lt == Type::Int && rt == Type::Int {
                     Some(Type::Int)
                 } else {
-                    self.error(format!("bitwise op requires ints, got '{}' and '{}'", lt, rt));
+                    self.error(azurite_lexer::Span::new(0, 0, 0, 0), format!("bitwise op requires ints, got '{}' and '{}'", lt, rt));
                     None
                 }
             }
@@ -322,21 +328,15 @@ impl Checker {
     fn check_unary_op(&mut self, t: Option<Type>, op: UnOp) -> Option<Type> {
         let t = t.unwrap_or(Type::Void);
         match op {
+            UnOp::Neg if t.is_numeric() => Some(t),
             UnOp::Neg => {
-                if t.is_numeric() {
-                    Some(t)
-                } else {
-                    self.error(format!("cannot negate '{}'", t));
-                    None
-                }
+                self.error(azurite_lexer::Span::new(0, 0, 0, 0), format!("cannot negate '{}'", t));
+                None
             }
+            UnOp::Not if t == Type::Bool => Some(Type::Bool),
             UnOp::Not => {
-                if t == Type::Bool {
-                    Some(Type::Bool)
-                } else {
-                    self.error(format!("cannot apply 'not' to '{}'", t));
-                    None
-                }
+                self.error(azurite_lexer::Span::new(0, 0, 0, 0), format!("cannot apply 'not' to '{}'", t));
+                None
             }
         }
     }

@@ -11,3 +11,4 @@ test = false
 azurite_lexer = { path = "../azurite_lexer" }
 azurite_parser = { path = "../azurite_parser" }
 azurite_checker = { path = "../azurite_checker" }
+azurite_errors = { path = "../azurite_errors" }

@@ -5,6 +5,7 @@ members = [
     "azurite_parser",
     "azurite_codegen",
     "azurite_checker",
+    "azurite_errors",
     "azurite_test",
 ]
 resolver = "2"

@@ -1,3 +1,4 @@
+use azurite_errors::{AzError, ErrorKind};
 use azurite_lexer::{Lexer, Span, Token, TokenKind};
 use crate::ast::*;
 
@@ -11,13 +12,15 @@ impl Parser {
         Self { tokens, pos: 0 }
     }
 
-    pub fn from_source(source: &str) -> Result<(Self, Vec<Token>), String> {
+    pub fn from_source(source: &str) -> Result<(Self, Vec<Token>), AzError> {
         let mut lexer = Lexer::new(source);
-        let tokens = lexer.tokenize()?;
+        let tokens = lexer.tokenize().map_err(|msg| {
+            AzError::new(ErrorKind::Lex, Span::new(0, 0, 1, 1), msg)
+        })?;
         Ok((Self::new(tokens.clone()), tokens))
     }
 
-    pub fn parse_program(&mut self) -> Result<Program, String> {
+    pub fn parse_program(&mut self) -> Result<Program, AzError> {
         let mut statements = Vec::new();
         while !self.is_eof() {
             let stmt = self.parse_stmt()?;
@@ -26,7 +29,12 @@ impl Parser {
         Ok(Program { statements })
     }
 
-    fn parse_stmt(&mut self) -> Result<Stmt, String> {
+    fn err(&self, msg: impl Into<String>) -> AzError {
+        let span = self.current_span();
+        AzError::new(ErrorKind::Parse, span, msg)
+    }
+
+    fn parse_stmt(&mut self) -> Result<Stmt, AzError> {
         match self.peek_kind() {
             Some(TokenKind::Let) => self.parse_let(),
             Some(TokenKind::Func) => self.parse_func(),
@@ -55,8 +63,8 @@ impl Parser {
         }
     }
 
-    fn parse_let(&mut self) -> Result<Stmt, String> {
-        self.advance(); // consume 'let'
+    fn parse_let(&mut self) -> Result<Stmt, AzError> {
+        self.advance();
         let name = self.parse_ident()?;
         let type_annotation = if self.peek_kind() == Some(TokenKind::Colon) {
             self.advance();
@@ -64,18 +72,18 @@ impl Parser {
         } else {
             None
         };
-        self.expect(TokenKind::Assign, "expected '=' in let")?;
+        self.expect(TokenKind::Assign, "expected '=' in let declaration")?;
         let value = self.parse_expr(0)?;
         self.expect_semicolon()?;
         Ok(Stmt::Let { name, type_annotation, value: Box::new(value) })
     }
 
-    fn parse_func(&mut self) -> Result<Stmt, String> {
-        self.advance(); // consume 'func'
+    fn parse_func(&mut self) -> Result<Stmt, AzError> {
+        self.advance();
         let name = self.parse_ident()?;
-        self.expect(TokenKind::LParen, "expected '(' after func name")?;
+        self.expect(TokenKind::LParen, "expected '(' after function name")?;
         let params = self.parse_params()?;
-        self.expect(TokenKind::RParen, "expected ')' after params")?;
+        self.expect(TokenKind::RParen, "expected ')' after parameters")?;
         let return_type = if self.peek_kind() == Some(TokenKind::Arrow) {
             self.advance();
             Some(self.parse_type()?)
@@ -86,7 +94,7 @@ impl Parser {
         Ok(Stmt::Func { name, params, return_type, body: Box::new(body) })
     }
 
-    fn parse_params(&mut self) -> Result<Vec<Param>, String> {
+    fn parse_params(&mut self) -> Result<Vec<Param>, AzError> {
         let mut params = Vec::new();
         loop {
             match self.peek_kind() {
@@ -107,8 +115,8 @@ impl Parser {
         Ok(params)
     }
 
-    fn parse_return(&mut self) -> Result<Stmt, String> {
-        self.advance(); // consume 'return'
+    fn parse_return(&mut self) -> Result<Stmt, AzError> {
+        self.advance();
         let value = match self.peek_kind() {
             Some(TokenKind::Semicolon) | Some(TokenKind::EOF) | Some(TokenKind::RBrace) => None,
             _ => Some(Box::new(self.parse_expr(0)?)),
@@ -117,20 +125,18 @@ impl Parser {
         Ok(Stmt::Return { value })
     }
 
-    fn parse_type(&mut self) -> Result<Type, String> {
+    fn parse_type(&mut self) -> Result<Type, AzError> {
         match self.peek_kind() {
             Some(TokenKind::Ident(name)) => {
                 let name = name.clone();
                 self.advance();
                 Ok(Type::Name(name))
             }
-            _ => Err(format!("expected type, found {:?}", self.peek_kind())),
+            _ => Err(self.err(format!("expected type, found {}", self.peek_kind().unwrap()))),
         }
     }
 
-    // --- Expression parsing (Pratt parser) ---
-
-    fn parse_expr(&mut self, min_bp: u8) -> Result<Expr, String> {
+    fn parse_expr(&mut self, min_bp: u8) -> Result<Expr, AzError> {
         let mut lhs = match self.peek_kind() {
             Some(TokenKind::Int(n)) => { self.advance(); Expr::Int(n) }
             Some(TokenKind::Float(n)) => { self.advance(); Expr::Float(n) }
@@ -163,8 +169,8 @@ impl Parser {
                 let operand = self.parse_expr(r_bp)?;
                 Expr::Unary { op, operand: Box::new(operand) }
             }
-            Some(other) => return Err(format!("unexpected token in expression: {}", other)),
-            None => return Err("unexpected end of input in expression".to_string()),
+            Some(ref other) => return Err(self.err(format!("unexpected token in expression: {}", other))),
+            None => return Err(self.err("unexpected end of input in expression")),
         };
 
         loop {
@@ -182,15 +188,13 @@ impl Parser {
                             }
                         }
                     }
-                    self.expect(TokenKind::RParen, "expected ')' after call args")?;
+                    self.expect(TokenKind::RParen, "expected ')' after call arguments")?;
                     lhs = Expr::Call { callee: Box::new(lhs), args };
                 }
-                Some(op_kind) if is_binop(&op_kind) => {
-                    let op = token_to_binop(op_kind).unwrap();
+                Some(ref op_kind) if is_binop(op_kind) => {
+                    let op = token_to_binop(op_kind.clone()).unwrap();
                     let (l_bp, r_bp) = infix_binding_power(op);
-                    if l_bp < min_bp {
-                        break;
-                    }
+                    if l_bp < min_bp { break; }
                     self.advance();
                     let rhs = self.parse_expr(r_bp)?;
                     lhs = Expr::Binary { left: Box::new(lhs), op, right: Box::new(rhs) };
@@ -202,7 +206,7 @@ impl Parser {
         Ok(lhs)
     }
 
-    fn parse_block(&mut self) -> Result<Expr, String> {
+    fn parse_block(&mut self) -> Result<Expr, AzError> {
         self.expect(TokenKind::LBrace, "expected '{'")?;
         let mut statements = Vec::new();
         loop {
@@ -218,8 +222,8 @@ impl Parser {
         Ok(Expr::Block(statements))
     }
 
-    fn parse_if_expr(&mut self) -> Result<Expr, String> {
-        self.advance(); // consume 'if'
+    fn parse_if_expr(&mut self) -> Result<Expr, AzError> {
+        self.advance();
         let condition = self.parse_expr(0)?;
         let then_branch = self.parse_block()?;
         let else_branch = if self.peek_kind() == Some(TokenKind::Else) {
@@ -235,14 +239,12 @@ impl Parser {
         Ok(Expr::If { condition: Box::new(condition), then_branch: Box::new(then_branch), else_branch })
     }
 
-    fn parse_while_expr(&mut self) -> Result<Expr, String> {
-        self.advance(); // consume 'while'
+    fn parse_while_expr(&mut self) -> Result<Expr, AzError> {
+        self.advance();
         let condition = self.parse_expr(0)?;
         let body = self.parse_block()?;
         Ok(Expr::While { condition: Box::new(condition), body: Box::new(body) })
     }
-
-    // --- Helpers ---
 
     fn peek_kind(&self) -> Option<TokenKind> {
         self.tokens.get(self.pos).map(|t| t.kind.clone())
@@ -263,26 +265,25 @@ impl Parser {
         matches!(self.peek_kind(), Some(TokenKind::EOF) | None)
     }
 
-    fn expect(&mut self, expected: TokenKind, msg: &str) -> Result<(), String> {
+    fn expect(&mut self, expected: TokenKind, msg: &str) -> Result<(), AzError> {
         match self.peek_kind() {
             Some(ref kind) if *kind == expected => {
                 self.advance();
                 Ok(())
             }
-            Some(other) => Err(format!("{}: expected {}, found {}", msg, expected, other)),
-            None => Err(format!("{}: expected {}, found EOF", msg, expected)),
+            Some(ref other) => Err(self.err(format!("{}: expected {}, found {}", msg, expected, other))),
+            None => Err(self.err(format!("{}: expected {}, found EOF", msg, expected))),
         }
     }
 
-    fn expect_semicolon(&mut self) -> Result<(), String> {
-        // Semicolons are optional — accept them silently when present
+    fn expect_semicolon(&mut self) -> Result<(), AzError> {
         if self.peek_kind() == Some(TokenKind::Semicolon) {
             self.advance();
         }
         Ok(())
     }
 
-    fn parse_ident(&mut self) -> Result<Ident, String> {
+    fn parse_ident(&mut self) -> Result<Ident, AzError> {
         match self.peek_kind() {
             Some(TokenKind::Ident(name)) => {
                 let span = self.current_span();
@@ -290,13 +291,11 @@ impl Parser {
                 self.advance();
                 Ok(ident)
             }
-            Some(other) => Err(format!("expected identifier, found {}", other)),
-            None => Err("expected identifier, found EOF".to_string()),
+            Some(ref other) => Err(self.err(format!("expected identifier, found {}", other))),
+            None => Err(self.err("expected identifier, found EOF")),
         }
     }
 }
-
-// --- Binding power ---
 
 fn prefix_binding_power(op: UnOp) -> ((), u8) {
     match op {
@@ -355,5 +354,3 @@ fn token_to_binop(kind: TokenKind) -> Option<BinOp> {
         _ => None,
     }
 }
-
-
