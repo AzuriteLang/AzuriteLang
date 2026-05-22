@@ -1,0 +1,40 @@
+use azurite_errors::{AzError, ErrorKind};
+use azurite_lexer::Span;
+use azurite_parser::ast::*;
+use inkwell::values::BasicValueEnum;
+use crate::codegen::CodeGen;
+
+mod literal;
+mod operator;
+mod call;
+mod control;
+
+pub fn compile_expr<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicValueEnum<'ctx>, AzError> {
+    match expr {
+        Expr::Int(_) | Expr::Float(_) | Expr::String(_) | Expr::Bool(_) | Expr::Null | Expr::Char(_) | Expr::Self_ | Expr::Super
+            => literal::compile_literal(cg, expr),
+        Expr::Binary { .. } | Expr::Unary { .. } => operator::compile_operator(cg, expr),
+        Expr::Call { .. } | Expr::MethodCall { .. } => call::compile_call(cg, expr),
+        Expr::If { .. } | Expr::While { .. } | Expr::Match { .. } | Expr::Block(_) | Expr::Array(_) | Expr::Index { .. } | Expr::Range { .. } | Expr::EnumVariant { .. } | Expr::FieldAccess { .. }
+            => control::compile_control(cg, expr),
+        Expr::Ident(ident) => {
+            if let Some((ptr, ty)) = cg.variables.get(&ident.name) {
+                Ok(cg.builder.build_load(*ty, *ptr, &ident.name).unwrap())
+            } else if let Some(f) = cg.module.get_function(&ident.name) {
+                let result = cg.builder.build_call(f, &[], "calltmp").unwrap();
+                Ok(match result.try_as_basic_value() {
+                    inkwell::values::ValueKind::Basic(bv) => bv,
+                    _ => cg.context.i64_type().const_zero().into(),
+                })
+            } else if is_class_name(cg, &ident.name) {
+                Ok(cg.context.i64_type().const_zero().into())
+            } else {
+                Err(AzError::new(ErrorKind::Semantic, ident.span, format!("undefined '{}'", ident.name)))
+            }
+        }
+    }
+}
+
+fn is_class_name<'ctx>(cg: &CodeGen<'ctx>, name: &str) -> bool {
+    cg.struct_types.contains_key(name)
+}
