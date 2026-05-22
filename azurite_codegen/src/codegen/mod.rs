@@ -70,6 +70,14 @@ impl<'ctx> CodeGen<'ctx> {
                 let alloca = self.create_entry_alloca(val_type, &name.name);
                 self.builder.build_store(alloca, val).unwrap();
                 self.variables.insert(name.name.clone(), (alloca, val_type));
+                // Store array length for literals
+                if let Expr::Array(elems) = value.as_ref() {
+                    let len_name = format!("{}.__len", name.name);
+                    let len_alloca = self.create_entry_alloca(self.context.i64_type().into(), &len_name);
+                    let len_val = self.context.i64_type().const_int(elems.len() as u64, false);
+                    self.builder.build_store(len_alloca, len_val).unwrap();
+                    self.variables.insert(len_name, (len_alloca, self.context.i64_type().into()));
+                }
                 Ok(Some(val))
             }
             Stmt::Func { name, params, return_type, body } => {
@@ -157,11 +165,60 @@ impl<'ctx> CodeGen<'ctx> {
                     }
                     // For each over array: for x in arr or for x in [1,2,3]
                     _ => {
-                        let count = match iterable.as_ref() {
-                            Expr::Array(elems) => elems.len() as i64,
-                            _ => 5i64,
-                        };
                         let arr = self.compile_expr(iterable)?.into_pointer_value();
+                        let (count, dyn_count) = match iterable.as_ref() {
+                            Expr::Array(elems) => (elems.len() as i64, None),
+                            Expr::Ident(ident) => {
+                                let len_var = format!("{}.__len", ident.name);
+                                if let Some((ptr, _)) = self.variables.get(&len_var) {
+                                    (5i64, Some((*ptr, i64_ty)))
+                                } else { (5i64, None) }
+                            }
+                            _ => (5i64, None),
+                        };
+
+                        // Use dynamic count from .__len if available
+                        let limit_val = if let Some((lptr, lty)) = dyn_count {
+                            self.builder.build_load(lty, lptr, "acnt").unwrap().into_int_value()
+                        } else {
+                            i64_ty.const_int(count as u64, false)
+                        };
+
+                        let i_ptr = self.create_entry_alloca(i64_ty.into(), &name.name);
+                        self.builder.build_store(i_ptr, i64_ty.const_zero()).unwrap();
+
+                        let cond_bb = self.context.append_basic_block(cf, "for_cond");
+                        let body_bb = self.context.append_basic_block(cf, "for_body");
+                        let after_bb = self.context.append_basic_block(cf, "for_after");
+
+                        self.builder.build_unconditional_branch(cond_bb).unwrap();
+                        self.builder.position_at_end(cond_bb);
+                        let i = self.builder.build_load(i64_ty, i_ptr, "i").unwrap();
+                        let cmp = self.builder.build_int_compare(
+                            inkwell::IntPredicate::SLT, i.into_int_value(), limit_val, "fcmp",
+                        ).unwrap();
+                        self.builder.build_conditional_branch(cmp, body_bb, after_bb).unwrap();
+
+                        self.builder.position_at_end(body_bb);
+                        let elem = unsafe {
+                            self.builder.build_gep(i64_ty, arr, &[self.builder.build_load(i64_ty, i_ptr, "i").unwrap().into_int_value()], "elem").unwrap()
+                        };
+                        let val = self.builder.build_load(i64_ty, elem, &name.name).unwrap();
+                        let var_ptr = self.create_entry_alloca(i64_ty.into(), &name.name);
+                        self.builder.build_store(var_ptr, val).unwrap();
+                        self.variables.insert(name.name.clone(), (var_ptr, i64_ty.into()));
+                        self.compile_block_stmts(body, false)?;
+                        if !self.has_terminator() {
+                            let i2 = self.builder.build_load(i64_ty, i_ptr, "i").unwrap();
+                            let inc = self.builder.build_int_add(i2.into_int_value(), i64_ty.const_int(1, false), "inc").unwrap();
+                            self.builder.build_store(i_ptr, inc).unwrap();
+                            self.builder.build_unconditional_branch(cond_bb).unwrap();
+                        }
+                        self.builder.position_at_end(after_bb);
+                    }
+                }
+                Ok(Some(i64_ty.const_zero().into()))
+            }
                         let i_ptr = self.create_entry_alloca(i64_ty.into(), &name.name);
                         self.builder.build_store(i_ptr, i64_ty.const_zero()).unwrap();
 
