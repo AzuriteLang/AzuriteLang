@@ -58,8 +58,11 @@ pub fn get_or_declare_printf<'ctx>(cg: &mut CodeGen<'ctx>) -> FunctionValue<'ctx
     pf
 }
 
-fn get_or_declare_putchar<'ctx>(cg: &mut CodeGen<'ctx>) -> FunctionValue<'ctx> {
+pub fn get_or_declare_putchar<'ctx>(cg: &mut CodeGen<'ctx>) -> FunctionValue<'ctx> {
+    if let Some(pc) = cg.putchar { return pc; }
     let i32 = cg.context.i32_type();
     let ft = i32.fn_type(&[i32.into()], false);
-    cg.module.add_function("putchar", ft, None)
+    let pc = cg.module.add_function("putchar", ft, None);
+    cg.putchar = Some(pc);
+    pc
 }

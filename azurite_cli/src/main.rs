@@ -140,7 +140,10 @@ fn cmd_build(file: &PathBuf, output: Option<&PathBuf>) -> Result<(), String> {
         let clang = clang_candidates.iter().find(|p| Path::new(p).exists()).unwrap_or(&"clang.exe");
         let exe = output.map(|o| o.to_path_buf()).unwrap_or_else(|| file.with_extension("exe"));
 
-        match std::process::Command::new(clang).args([&ll_path.to_string_lossy(), "-o", &exe.to_string_lossy()]).status() {
+        let mut cmd = std::process::Command::new(clang);
+        cmd.args([&ll_path.to_string_lossy(), "-o", &exe.to_string_lossy()]);
+        cmd.args(["-Wl,/defaultlib:msvcrt", "-Wl,/defaultlib:oldnames"]);
+        match cmd.status() {
             Ok(s) if s.success() => println!("Executable: {}", exe.display()),
             _ => println!("LLVM IR generated. Install clang for .exe"),
         }

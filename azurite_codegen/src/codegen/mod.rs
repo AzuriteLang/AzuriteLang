@@ -30,6 +30,7 @@ pub struct CodeGen<'ctx> {
     pub self_ptr: Option<PointerValue<'ctx>>,
     pub current_class: Option<String>,
     pub printf: Option<FunctionValue<'ctx>>,
+    pub putchar: Option<FunctionValue<'ctx>>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -46,6 +47,7 @@ impl<'ctx> CodeGen<'ctx> {
             self_ptr: None,
             current_class: None,
             printf: None,
+            putchar: None,
         }
     }
 
@@ -182,10 +184,10 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder.build_conditional_branch(cond_int, then_bb, else_bb).unwrap();
                 self.builder.position_at_end(then_bb);
                 self.compile_block_stmts(then_branch, false)?;
-                self.builder.build_unconditional_branch(merge_bb).unwrap();
+                if !self.has_terminator() { self.builder.build_unconditional_branch(merge_bb).unwrap(); }
                 self.builder.position_at_end(else_bb);
                 if let Some(eb) = else_branch { self.compile_block_stmts(eb, false)?; }
-                self.builder.build_unconditional_branch(merge_bb).unwrap();
+                if !self.has_terminator() { self.builder.build_unconditional_branch(merge_bb).unwrap(); }
                 self.builder.position_at_end(merge_bb);
                 Ok(Some(self.context.i64_type().const_zero().into()))
             }
@@ -201,7 +203,7 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder.build_conditional_branch(cond_int, body_bb, after_bb).unwrap();
                 self.builder.position_at_end(body_bb);
                 self.compile_block_stmts(body, false)?;
-                self.builder.build_unconditional_branch(cond_bb).unwrap();
+                if !self.has_terminator() { self.builder.build_unconditional_branch(cond_bb).unwrap(); }
                 self.builder.position_at_end(after_bb);
                 Ok(Some(self.context.i64_type().const_zero().into()))
             }
@@ -232,7 +234,10 @@ impl<'ctx> CodeGen<'ctx> {
     pub fn create_entry_alloca(&self, ty: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {
         let entry = self.function.unwrap().get_first_basic_block().unwrap();
         let saved = self.builder.get_insert_block().unwrap();
-        self.builder.position_at_end(entry);
+        match entry.get_first_instruction() {
+            Some(first_inst) => self.builder.position_before(&first_inst),
+            None => self.builder.position_at_end(entry),
+        }
         let alloca = self.builder.build_alloca(ty, name).unwrap();
         self.builder.position_at_end(saved);
         alloca
