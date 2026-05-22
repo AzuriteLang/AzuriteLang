@@ -3,21 +3,19 @@ use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue};
 use crate::codegen::CodeGen;
 
 pub fn compile_print<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, azurite_errors::AzError> {
-    let val = if args.is_empty() {
-        cg.context.i64_type().const_zero().into()
-    } else {
-        cg.compile_expr(&args[0])?
-    };
-
-    let (fmt, arg) = get_print_format(cg, &val);
-
-    let mut printf_args: Vec<BasicMetadataValueEnum> = vec![fmt.into()];
-    if let Some(a) = arg { printf_args.push(a.into()); }
-
     let printf = get_or_declare_printf(cg);
-    cg.builder.build_call(printf, &printf_args, "printtmp").unwrap();
 
-    // Always add newline (Python-style print)
+    for arg_expr in args {
+        let val = cg.compile_expr(arg_expr)?;
+        let (fmt, data) = get_print_format(cg, &val);
+
+        let mut printf_args: Vec<BasicMetadataValueEnum> = vec![fmt.into()];
+        if let Some(d) = data { printf_args.push(d.into()); }
+
+        cg.builder.build_call(printf, &printf_args, "printtmp").unwrap();
+    }
+
+    // Final newline (Python-style print)
     let nl = cg.context.i8_type().const_int(b'\n' as u64, false);
     let putchar = get_or_declare_putchar(cg);
     cg.builder.build_call(putchar, &[nl.into()], "nl").unwrap();
