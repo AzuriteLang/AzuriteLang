@@ -51,7 +51,15 @@ impl Lexer {
             '*' => self.single_char_token(TokenKind::Star),
             '/' => self.single_char_token(TokenKind::Slash),
             '%' => self.single_char_token(TokenKind::Percent),
-            '=' => self.try_two_char('=', TokenKind::Assign, TokenKind::Equal),
+            '=' => {
+                if self.peek_next() == Some('>') {
+                    self.bump();
+                    self.bump();
+                    Ok(Token::new(TokenKind::FatArrow, self.prev_span(2)))
+                } else {
+                    self.try_two_char('=', TokenKind::Assign, TokenKind::Equal)
+                }
+            }
             '!' => self.try_two_char('=', TokenKind::Not, TokenKind::NotEqual),
             '<' => {
                 if self.peek_next() == Some('<') {
@@ -83,7 +91,15 @@ impl Lexer {
             ',' => self.single_char_token(TokenKind::Comma),
             ';' => self.single_char_token(TokenKind::Semicolon),
             ':' => self.single_char_token(TokenKind::Colon),
-            '.' => self.single_char_token(TokenKind::Dot),
+            '.' => {
+                if self.peek_next() == Some('.') {
+                    self.bump();
+                    self.bump();
+                    Ok(Token::new(TokenKind::DotDot, self.prev_span(2)))
+                } else {
+                    self.single_char_token(TokenKind::Dot)
+                }
+            }
             '#' => self.single_char_token(TokenKind::Hash),
             _ => {
                 let span = self.current_span();
@@ -235,6 +251,7 @@ impl Lexer {
             "else" => TokenKind::Else,
             "while" => TokenKind::While,
             "for" => TokenKind::For,
+            "match" => TokenKind::Match,
             "return" => TokenKind::Return,
             "import" => TokenKind::Import,
             "struct" => TokenKind::Struct,

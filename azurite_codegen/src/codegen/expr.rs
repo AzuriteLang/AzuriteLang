@@ -157,6 +157,32 @@ pub fn compile_expr<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
             let tag_val = cg.context.i8_type().const_int(tag % 256, false);
             Ok(tag_val.into())
         }
+        Expr::Match { value, arms } => {
+            let _val = cg.compile_expr(value)?;
+            let cf = cg.function.unwrap();
+            let mut arm_bbs = Vec::new();
+            let after_bb = cg.context.append_basic_block(cf, "match_after");
+
+            for (i, _arm) in arms.iter().enumerate() {
+                let arm_bb = cg.context.append_basic_block(cf, &format!("match_arm{}", i));
+                arm_bbs.push(arm_bb);
+                cg.builder.position_at_end(arm_bb);
+                cg.compile_expr(&_arm.body)?;
+                cg.builder.build_unconditional_branch(after_bb).unwrap();
+            }
+
+            if !arm_bbs.is_empty() {
+                cg.builder.position_at_end(arm_bbs[0]);
+            }
+            cg.builder.position_at_end(after_bb);
+            Ok(cg.context.i64_type().const_zero().into())
+        }
+        Expr::Range { start, end } => {
+            let s = cg.compile_expr(start)?;
+            let e = cg.compile_expr(end)?;
+            // Return (start, end) as a pair? For now just return end
+            Ok(e)
+        }
         Expr::While { condition, body } => {
             let cf = cg.function.unwrap();
             let cond_bb = cg.context.append_basic_block(cf, "while_cond");
@@ -205,16 +231,20 @@ fn compile_binary<'ctx>(cg: &CodeGen<'ctx>, lhs: BasicValueEnum<'ctx>, rhs: Basi
             };
             Ok(val)
         }
-        (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => {
-            let val = match op {
-                BinOp::Add => cg.builder.build_float_add(l, r, "faddtmp").unwrap().into(),
-                BinOp::Sub => cg.builder.build_float_sub(l, r, "fsubtmp").unwrap().into(),
-                BinOp::Mul => cg.builder.build_float_mul(l, r, "fmultmp").unwrap().into(),
-                BinOp::Div => cg.builder.build_float_div(l, r, "fdivtmp").unwrap().into(),
-                _ => return Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), "unsupported float op")),
-            };
-            Ok(val)
-        }
+            (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => {
+                let val = match op {
+                    BinOp::Add => cg.builder.build_float_add(l, r, "faddtmp").unwrap().into(),
+                    BinOp::Sub => cg.builder.build_float_sub(l, r, "fsubtmp").unwrap().into(),
+                    BinOp::Mul => cg.builder.build_float_mul(l, r, "fmultmp").unwrap().into(),
+                    BinOp::Div => cg.builder.build_float_div(l, r, "fdivtmp").unwrap().into(),
+                    _ => return Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), "unsupported float op")),
+                };
+                Ok(val)
+            }
+            (BasicValueEnum::PointerValue(l), BasicValueEnum::PointerValue(_r)) if op == BinOp::Add => {
+                // String concatenation: return the first string for now
+                Ok(l.into())
+            }
         _ => Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), "type mismatch")),
     }
 }

@@ -42,6 +42,11 @@ pub enum Stmt {
     Return {
         value: Option<Box<Expr>>,
     },
+    For {
+        name: Ident,
+        iterable: Box<Expr>,
+        body: Box<Expr>,
+    },
     Expr(Expr),
 }
 
@@ -55,6 +60,26 @@ pub struct ClassField {
 pub struct EnumVariant {
     pub name: Ident,
     pub types: Vec<Type>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+    Wildcard,
+    Int(i64),
+    Bool(bool),
+    String(String),
+    Ident(String),
+    EnumVariant {
+        enum_name: Option<String>,
+        variant: String,
+        bindings: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub body: Box<Expr>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -98,6 +123,14 @@ pub enum Expr {
     Index {
         obj: Box<Expr>,
         index: Box<Expr>,
+    },
+    Match {
+        value: Box<Expr>,
+        arms: Vec<MatchArm>,
+    },
+    Range {
+        start: Box<Expr>,
+        end: Box<Expr>,
     },
     Block(Vec<Stmt>),
     If {

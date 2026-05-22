@@ -52,6 +52,7 @@ impl Parser {
                     Ok(Stmt::While { condition, body })
                 } else { unreachable!() }
             }
+            Some(TokenKind::For) => self.parse_for(),
             Some(TokenKind::Return) => self.parse_return(),
             _ => {
                 let expr = self.parse_expr(0)?;
@@ -192,6 +193,20 @@ impl Parser {
         }
     }
 
+    fn parse_for(&mut self) -> Result<Stmt, AzError> {
+        self.advance();
+        let name = self.parse_ident()?;
+        // Expect 'in' keyword (tokenized as Ident("in"))
+        match self.peek_kind() {
+            Some(TokenKind::Ident(ref s)) if s == "in" => { self.advance(); }
+            Some(ref other) => return Err(self.err(format!("expected 'in' after for variable, found {}", other))),
+            None => return Err(self.err("expected 'in' after for variable, found EOF")),
+        }
+        let iterable = self.parse_expr(0)?;
+        let body = self.parse_block()?;
+        Ok(Stmt::For { name, iterable: Box::new(iterable), body: Box::new(body) })
+    }
+
     fn parse_return(&mut self) -> Result<Stmt, AzError> {
         self.advance();
         let value = match self.peek_kind() {
@@ -238,6 +253,7 @@ impl Parser {
             Some(TokenKind::LBracket) => self.parse_array()?,
             Some(TokenKind::If) => self.parse_if_expr()?,
             Some(TokenKind::While) => self.parse_while_expr()?,
+            Some(TokenKind::Match) => self.parse_match_expr()?,
             Some(TokenKind::Minus) | Some(TokenKind::Not) => {
                 let op = match self.peek_kind() { Some(TokenKind::Minus) => UnOp::Neg, _ => UnOp::Not };
                 self.advance();
@@ -264,6 +280,11 @@ impl Parser {
                     }
                     self.expect(TokenKind::RParen, "expected ')' after arguments")?;
                     lhs = Expr::Call { callee: Box::new(lhs), args };
+                }
+                Some(TokenKind::DotDot) => {
+                    self.advance();
+                    let rhs = self.parse_expr(9)?; // low binding power
+                    lhs = Expr::Range { start: Box::new(lhs), end: Box::new(rhs) };
                 }
                 Some(TokenKind::LBracket) => {
                     self.advance();
@@ -351,6 +372,92 @@ impl Parser {
             }
         } else { None };
         Ok(Expr::If { condition: Box::new(condition), then_branch: Box::new(then_branch), else_branch })
+    }
+
+    fn parse_match_expr(&mut self) -> Result<Expr, AzError> {
+        self.advance();
+        let value = self.parse_expr(0)?;
+        self.expect(TokenKind::LBrace, "expected '{' after match value")?;
+        let mut arms = Vec::new();
+        loop {
+            match self.peek_kind() {
+                Some(TokenKind::RBrace) | None => break,
+                _ => {
+                    let pattern = self.parse_pattern()?;
+                    self.expect(TokenKind::FatArrow, "expected '=>' after pattern")?;
+                    let body = self.parse_expr(0)?;
+                    arms.push(MatchArm { pattern, body: Box::new(body) });
+                    // optional comma/semicolon between arms
+                    if self.peek_kind() == Some(TokenKind::Comma) || self.peek_kind() == Some(TokenKind::Semicolon) {
+                        self.advance();
+                    }
+                }
+            }
+        }
+        self.expect(TokenKind::RBrace, "expected '}' after match arms")?;
+        Ok(Expr::Match { value: Box::new(value), arms })
+    }
+
+    fn parse_pattern(&mut self) -> Result<Pattern, AzError> {
+        match self.peek_kind() {
+            Some(TokenKind::Int(n)) => { self.advance(); Ok(Pattern::Int(n)) }
+            Some(TokenKind::True) => { self.advance(); Ok(Pattern::Bool(true)) }
+            Some(TokenKind::False) => { self.advance(); Ok(Pattern::Bool(false)) }
+            Some(TokenKind::String(s)) => { self.advance(); Ok(Pattern::String(s.clone())) }
+            Some(TokenKind::Ident(name)) => {
+                let name = name.clone();
+                self.advance();
+                if name == "_" {
+                    return Ok(Pattern::Wildcard);
+                }
+                // Check for Enum.Variant pattern
+                if self.peek_kind() == Some(TokenKind::Dot) {
+                    self.advance(); // consume '.'
+                    let variant = match self.peek_kind() {
+                        Some(TokenKind::Ident(v)) => { let v = v.clone(); self.advance(); v }
+                        _ => return Err(self.err("expected variant name after '.' in pattern")),
+                    };
+                    let bindings = if self.peek_kind() == Some(TokenKind::LParen) {
+                        self.advance();
+                        let mut bs = Vec::new();
+                        loop {
+                            match self.peek_kind() {
+                                Some(TokenKind::RParen) | None => break,
+                                Some(TokenKind::Comma) => { self.advance(); }
+                                _ => {
+                                    match self.peek_kind() {
+                                        Some(TokenKind::Ident(b)) => { let b = b.clone(); self.advance(); bs.push(b); }
+                                        Some(TokenKind::Self_) => { self.advance(); bs.push("self".to_string()); }
+                                        _ => return Err(self.err("expected identifier in pattern binding")),
+                                    }
+                                }
+                            }
+                        }
+                        self.expect(TokenKind::RParen, "expected ')' after pattern bindings")?;
+                        bs
+                    } else { Vec::new() };
+                    Ok(Pattern::EnumVariant { enum_name: Some(name), variant, bindings })
+                } else {
+                    // Simple ident pattern (binds value)
+                    Ok(Pattern::Ident(name))
+                }
+            }
+            Some(TokenKind::Self_) => {
+                self.advance();
+                // Check for Enum.Variant
+                if self.peek_kind() == Some(TokenKind::Dot) {
+                    self.advance();
+                    let variant = match self.peek_kind() {
+                        Some(TokenKind::Ident(v)) => { let v = v.clone(); self.advance(); v }
+                        _ => return Err(self.err("expected variant name")),
+                    };
+                    Ok(Pattern::EnumVariant { enum_name: Some("self".to_string()), variant, bindings: vec![] })
+                } else {
+                    Ok(Pattern::Ident("self".to_string()))
+                }
+            }
+            _ => Err(self.err("expected pattern")),
+        }
     }
 
     fn parse_while_expr(&mut self) -> Result<Expr, AzError> {

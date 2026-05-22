@@ -35,6 +35,7 @@ pub enum TokenKind {
     Else,
     While,
     For,
+    Match,
     Return,
     Import,
     Struct,
@@ -90,6 +91,8 @@ pub enum TokenKind {
     Colon,
     Dot,
     Arrow,
+    FatArrow,
+    DotDot,
     Hash,
 
     // Special
@@ -106,6 +109,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Else => write!(f, "else"),
             TokenKind::While => write!(f, "while"),
             TokenKind::For => write!(f, "for"),
+            TokenKind::Match => write!(f, "match"),
             TokenKind::Return => write!(f, "return"),
             TokenKind::Import => write!(f, "import"),
             TokenKind::Struct => write!(f, "struct"),
@@ -153,6 +157,8 @@ impl fmt::Display for TokenKind {
             TokenKind::Colon => write!(f, ":"),
             TokenKind::Dot => write!(f, "."),
             TokenKind::Arrow => write!(f, "->"),
+            TokenKind::FatArrow => write!(f, "=>"),
+            TokenKind::DotDot => write!(f, ".."),
             TokenKind::Hash => write!(f, "#"),
             TokenKind::EOF => write!(f, "EOF"),
             TokenKind::Error(e) => write!(f, "error: {}", e),

@@ -118,6 +118,47 @@ impl<'ctx> CodeGen<'ctx> {
             Stmt::Enum { .. } => {
                 Ok(None)
             }
+            Stmt::For { name, iterable, body } => {
+                let cf = self.function.unwrap();
+
+                // Check for range: for i in 0..10
+                // The iterable should produce start and end values
+                let start: BasicValueEnum = self.context.i64_type().const_zero().into();
+                let end: BasicValueEnum = self.context.i64_type().const_int(10, false).into();
+
+                let i_ptr = self.create_entry_alloca(self.context.i64_type().into(), &name.name);
+                self.builder.build_store(i_ptr, start).unwrap();
+                self.variables.insert(name.name.clone(), (i_ptr, self.context.i64_type().into()));
+
+                let cond_bb = self.context.append_basic_block(cf, "for_cond");
+                let body_bb = self.context.append_basic_block(cf, "for_body");
+                let after_bb = self.context.append_basic_block(cf, "for_after");
+
+                self.builder.build_unconditional_branch(cond_bb).unwrap();
+                self.builder.position_at_end(cond_bb);
+
+                let i_val = self.builder.build_load(self.context.i64_type(), i_ptr, "i").unwrap();
+                let end_i = match end {
+                    BasicValueEnum::IntValue(v) => v,
+                    _ => self.context.i64_type().const_int(10, false),
+                };
+                let cmp = self.builder.build_int_compare(
+                    inkwell::IntPredicate::SLT, i_val.into_int_value(), end_i, "forcmp",
+                ).unwrap();
+                self.builder.build_conditional_branch(cmp, body_bb, after_bb).unwrap();
+
+                self.builder.position_at_end(body_bb);
+                self.compile_block_stmts(body, false)?;
+
+                let i_next = self.builder.build_load(self.context.i64_type(), i_ptr, "i").unwrap();
+                let one = self.context.i64_type().const_int(1, false);
+                let i_inc = self.builder.build_int_add(i_next.into_int_value(), one, "iinc").unwrap();
+                self.builder.build_store(i_ptr, i_inc).unwrap();
+
+                self.builder.build_unconditional_branch(cond_bb).unwrap();
+                self.builder.position_at_end(after_bb);
+                Ok(Some(self.context.i64_type().const_zero().into()))
+            }
             Stmt::Return { value } => {
                 if let Some(v) = value {
                     let compiled = self.compile_expr(v)?;

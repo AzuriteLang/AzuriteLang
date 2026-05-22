@@ -190,6 +190,18 @@ impl Checker {
                 self.check_expr(body);
                 None
             }
+            Stmt::For { name, iterable, body } => {
+                self.check_expr(iterable);
+                self.scope.push();
+                self.scope.insert(&name.name, Symbol {
+                    name: name.name.clone(),
+                    kind: SymbolKind::Variable,
+                    type_: Type::Int,
+                }).unwrap_or_else(|e| self.error(name.span, e));
+                self.check_expr(body);
+                self.scope.pop();
+                None
+            }
             Stmt::Expr(expr) => self.check_expr(expr),
         }
     }
@@ -297,6 +309,16 @@ impl Checker {
                 self.check_expr(body);
                 Some(Type::Void)
             }
+            Expr::Match { value, arms } => {
+                self.check_expr(value);
+                for arm in arms { self.check_expr(&arm.body); }
+                Some(Type::Void)
+            }
+            Expr::Range { start, end } => {
+                self.check_expr(start);
+                self.check_expr(end);
+                Some(Type::Void)
+            }
         }
     }
 
@@ -317,6 +339,8 @@ impl Checker {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
                 if lt.is_numeric() && rt.is_numeric() {
                     Some(if lt == Type::Float || rt == Type::Float { Type::Float } else { Type::Int })
+                } else if op == BinOp::Add && lt == Type::String && rt == Type::String {
+                    Some(Type::String)
                 } else {
                     self.error(azurite_lexer::Span::new(0, 0, 0, 0), format!("cannot apply '{}' to '{}' and '{}'", op, lt, rt));
                     None
