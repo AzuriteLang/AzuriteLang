@@ -38,6 +38,7 @@ impl Checker {
             ("read", Type::Func { params: vec![], ret: Box::new(Type::String) }),
             ("input", Type::Func { params: vec![Type::String], ret: Box::new(Type::String) }),
             ("exit", Type::Func { params: vec![Type::Int], ret: Box::new(Type::Void) }),
+            ("char_at", Type::Func { params: vec![Type::String, Type::Int], ret: Box::new(Type::Int) }),
         ];
         for (name, type_) in builtins {
             self.scope.insert(name, Symbol {

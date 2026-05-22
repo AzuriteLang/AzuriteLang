@@ -1,0 +1,103 @@
+// Self-hosting step 1: Tokenizer in AzuriteLang
+
+func is_whitespace(c: int) -> bool {
+    return c == 32 or c == 10 or c == 13 or c == 9
+}
+
+func is_digit(c: int) -> bool {
+    return c >= 48 and c <= 57
+}
+
+func is_alpha(c: int) -> bool {
+    return (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95
+}
+
+func is_alnum(c: int) -> bool {
+    return is_alpha(c) or is_digit(c)
+}
+
+func tokenize(src: string) {
+    let len = len(src)
+    let i = 0
+
+    while i < len {
+        let c = char_at(src, i)
+
+        // Skip whitespace
+        if is_whitespace(c) {
+            i = i + 1
+        } else if c == 47 { // '/'
+            if i + 1 < len and char_at(src, i + 1) == 47 { // '//'
+                i = i + 2
+                while i < len and char_at(src, i) != 10 { i = i + 1 }
+            } else {
+                print("/")
+                i = i + 1
+            }
+        } else if c == 34 { // '"'
+            i = i + 1
+            let start = i
+            while i < len and char_at(src, i) != 34 {
+                if char_at(src, i) == 92 { i = i + 1 } // skip escape
+                i = i + 1
+            }
+            i = i + 1
+        } else if is_digit(c) {
+            while i < len and is_digit(char_at(src, i)) { i = i + 1 }
+            if i < len and char_at(src, i) == 46 { i = i + 1 } // '.'
+            while i < len and is_digit(char_at(src, i)) { i = i + 1 }
+        } else if is_alpha(c) {
+            while i < len and is_alnum(char_at(src, i)) { i = i + 1 }
+        } else {
+            // Single-char operators
+            if c == 40 { print("(") }        // (
+            else if c == 41 { print(")") }    // )
+            else if c == 123 { print("{") }   // {
+            else if c == 125 { print("}") }   // }
+            else if c == 91 { print("[") }    // [
+            else if c == 93 { print("]") }    // ]
+            else if c == 59 { print(";") }    // ;
+            else if c == 44 { print(",") }    // ,
+            else if c == 58 { print(":") }    // :
+            else if c == 46 { print(".") }    // .
+            else if c == 35 { print("#") }    // #
+            else if c == 43 { print("+") }    // +
+            else if c == 45 { print("-") }    // -
+            else if c == 42 { print("*") }    // *
+            else if c == 37 { print("%") }    // %
+            else if c == 61 {                 // =
+                if i + 1 < len and char_at(src, i + 1) == 61 { i = i + 1; print("==") }
+                else { print("=") }
+            }
+            else if c == 33 {                 // !
+                if i + 1 < len and char_at(src, i + 1) == 61 { i = i + 1; print("!=") }
+            }
+            else if c == 60 {                 // <
+                if i + 1 < len and char_at(src, i + 1) == 61 { i = i + 1; print("<=") }
+                else if i + 1 < len and char_at(src, i + 1) == 60 { i = i + 1; print("<<") }
+                else { print("<") }
+            }
+            else if c == 62 {                 // >
+                if i + 1 < len and char_at(src, i + 1) == 61 { i = i + 1; print(">=") }
+                else if i + 1 < len and char_at(src, i + 1) == 62 { i = i + 1; print(">>") }
+                else { print(">") }
+            }
+            else if c == 38 {                 // &
+                if i + 1 < len and char_at(src, i + 1) == 38 { i = i + 1; print("&&") }
+                else { print("&") }
+            }
+            else if c == 124 {                // |
+                if i + 1 < len and char_at(src, i + 1) == 124 { i = i + 1; print("||") }
+                else { print("|") }
+            }
+            i = i + 1
+        }
+    }
+}
+
+func main() {
+    print("=== AzuriteLang Tokenizer ===")
+    // Tokenize self
+    tokenize("func main() { print(42) }")
+    print("=== Done ===")
+}

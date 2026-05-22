@@ -22,6 +22,7 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                 "read" => return compile_read(cg),
                 "input" => return compile_input(cg, args),
                 "exit" => return compile_exit(cg, args),
+                "char_at" => return compile_char_at(cg, args),
                 _ => {}
             }
             let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
@@ -137,4 +138,14 @@ fn compile_int_cast<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<Basic
 fn compile_float_cast<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
     let val = cg.compile_expr(&args[0])?;
     Ok(cg.builder.build_signed_int_to_float(val.into_int_value(), cg.context.f64_type(), "i2f").unwrap().into())
+}
+
+fn compile_char_at<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let s = cg.compile_expr(&args[0])?;
+    let idx = cg.compile_expr(&args[1])?.into_int_value();
+    let ptr = s.into_pointer_value();
+    let elem = unsafe { cg.builder.build_gep(cg.context.i8_type(), ptr, &[idx], "ch").unwrap() };
+    let loaded = cg.builder.build_load(cg.context.i8_type(), elem, "char").unwrap();
+    // Zero-extend i8 to i64
+    Ok(cg.builder.build_int_z_extend(loaded.into_int_value(), cg.context.i64_type(), "ch_ext").unwrap().into())
 }
