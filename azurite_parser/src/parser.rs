@@ -152,7 +152,7 @@ impl Parser {
 
     fn parse_func(&mut self) -> Result<Stmt, AzError> {
         self.advance();
-        let name = self.parse_ident()?;
+        let name = self.parse_func_name()?;
         self.expect(TokenKind::LParen, "expected '(' after function name")?;
         let params = self.parse_params()?;
         self.expect(TokenKind::RParen, "expected ')' after parameters")?;
@@ -181,6 +181,23 @@ impl Parser {
             }
         }
         Ok(params)
+    }
+
+    fn parse_func_name(&mut self) -> Result<Ident, AzError> {
+        // Allow operators as function names (for operator overloading)
+        let span = self.current_span();
+        match self.peek_kind() {
+            Some(TokenKind::Plus) => { self.advance(); Ok(Ident { name: "+".to_string(), span }) }
+            Some(TokenKind::Minus) => { self.advance(); Ok(Ident { name: "-".to_string(), span }) }
+            Some(TokenKind::Star) => { self.advance(); Ok(Ident { name: "*".to_string(), span }) }
+            Some(TokenKind::Slash) => { self.advance(); Ok(Ident { name: "/".to_string(), span }) }
+            Some(TokenKind::Percent) => { self.advance(); Ok(Ident { name: "%".to_string(), span }) }
+            Some(TokenKind::Equal) => { self.advance(); Ok(Ident { name: "==".to_string(), span }) }
+            Some(TokenKind::NotEqual) => { self.advance(); Ok(Ident { name: "!=".to_string(), span }) }
+            Some(TokenKind::Less) => { self.advance(); Ok(Ident { name: "<".to_string(), span }) }
+            Some(TokenKind::Greater) => { self.advance(); Ok(Ident { name: ">".to_string(), span }) }
+            _ => self.parse_ident(),
+        }
     }
 
     fn parse_ident_or_self(&mut self) -> Result<Ident, AzError> {

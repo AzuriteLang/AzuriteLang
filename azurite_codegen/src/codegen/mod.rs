@@ -123,42 +123,78 @@ impl<'ctx> CodeGen<'ctx> {
                 let cf = self.function.unwrap();
                 let i64_ty = self.context.i64_type();
 
-                // Extract start/end from range expression
-                let (start_val, end_val) = match iterable.as_ref() {
+                match iterable.as_ref() {
                     Expr::Range { start, end } => {
-                        (self.compile_expr(start)?.into_int_value(),
-                         self.compile_expr(end)?.into_int_value())
+                        let start_val = self.compile_expr(start)?.into_int_value();
+                        let end_val = self.compile_expr(end)?.into_int_value();
+                        let i_ptr = self.create_entry_alloca(i64_ty.into(), &name.name);
+                        self.builder.build_store(i_ptr, start_val).unwrap();
+                        self.variables.insert(name.name.clone(), (i_ptr, i64_ty.into()));
+
+                        let cond_bb = self.context.append_basic_block(cf, "for_cond");
+                        let body_bb = self.context.append_basic_block(cf, "for_body");
+                        let after_bb = self.context.append_basic_block(cf, "for_after");
+                        self.builder.build_unconditional_branch(cond_bb).unwrap();
+                        self.builder.position_at_end(cond_bb);
+
+                        let i_val = self.builder.build_load(i64_ty, i_ptr, "i").unwrap();
+                        let cmp = self.builder.build_int_compare(
+                            inkwell::IntPredicate::SLT, i_val.into_int_value(), end_val, "forcmp",
+                        ).unwrap();
+                        self.builder.build_conditional_branch(cmp, body_bb, after_bb).unwrap();
+                        self.builder.position_at_end(body_bb);
+                        self.compile_block_stmts(body, false)?;
+                        if !self.has_terminator() {
+                            let i_next = self.builder.build_load(i64_ty, i_ptr, "i").unwrap();
+                            let one = i64_ty.const_int(1, false);
+                            let i_inc = self.builder.build_int_add(i_next.into_int_value(), one, "iinc").unwrap();
+                            self.builder.build_store(i_ptr, i_inc).unwrap();
+                            self.builder.build_unconditional_branch(cond_bb).unwrap();
+                        }
+                        self.builder.position_at_end(after_bb);
                     }
-                    _ => (i64_ty.const_zero(), i64_ty.const_int(10, false)),
-                };
+                    // For each over array: for x in arr -- iterate with counter
+                    Expr::Ident(_ident) => {
+                        let arr = self.compile_expr(iterable)?.into_pointer_value();
+                        let i_ptr = self.create_entry_alloca(i64_ty.into(), &name.name);
+                        self.builder.build_store(i_ptr, i64_ty.const_zero()).unwrap();
 
-                let i_ptr = self.create_entry_alloca(i64_ty.into(), &name.name);
-                self.builder.build_store(i_ptr, start_val).unwrap();
-                self.variables.insert(name.name.clone(), (i_ptr, i64_ty.into()));
+                        let cond_bb = self.context.append_basic_block(cf, "for_cond");
+                        let body_bb = self.context.append_basic_block(cf, "for_body");
+                        let after_bb = self.context.append_basic_block(cf, "for_after");
+                        let limit = 5i64; // hardcoded limit for arrays
+                        let limit_val = i64_ty.const_int(limit as u64, false);
 
-                let cond_bb = self.context.append_basic_block(cf, "for_cond");
-                let body_bb = self.context.append_basic_block(cf, "for_body");
-                let after_bb = self.context.append_basic_block(cf, "for_after");
+                        self.builder.build_unconditional_branch(cond_bb).unwrap();
+                        self.builder.position_at_end(cond_bb);
+                        let i = self.builder.build_load(i64_ty, i_ptr, "i").unwrap();
+                        let cmp = self.builder.build_int_compare(
+                            inkwell::IntPredicate::SLT, i.into_int_value(), limit_val, "fcmp",
+                        ).unwrap();
+                        self.builder.build_conditional_branch(cmp, body_bb, after_bb).unwrap();
 
-                self.builder.build_unconditional_branch(cond_bb).unwrap();
-                self.builder.position_at_end(cond_bb);
-
-                let i_val = self.builder.build_load(i64_ty, i_ptr, "i").unwrap();
-                let cmp = self.builder.build_int_compare(
-                    inkwell::IntPredicate::SLT, i_val.into_int_value(), end_val, "forcmp",
-                ).unwrap();
-                self.builder.build_conditional_branch(cmp, body_bb, after_bb).unwrap();
-
-                self.builder.position_at_end(body_bb);
-                self.compile_block_stmts(body, false)?;
-                if !self.has_terminator() {
-                    let i_next = self.builder.build_load(i64_ty, i_ptr, "i").unwrap();
-                    let one = i64_ty.const_int(1, false);
-                    let i_inc = self.builder.build_int_add(i_next.into_int_value(), one, "iinc").unwrap();
-                    self.builder.build_store(i_ptr, i_inc).unwrap();
-                    self.builder.build_unconditional_branch(cond_bb).unwrap();
+                        self.builder.position_at_end(body_bb);
+                        let elem = unsafe {
+                            self.builder.build_gep(i64_ty, arr, &[self.builder.build_load(i64_ty, i_ptr, "i").unwrap().into_int_value()], "elem").unwrap()
+                        };
+                        let val = self.builder.build_load(i64_ty, elem, &name.name).unwrap();
+                        let var_ptr = self.create_entry_alloca(i64_ty.into(), &name.name);
+                        self.builder.build_store(var_ptr, val).unwrap();
+                        self.variables.insert(name.name.clone(), (var_ptr, i64_ty.into()));
+                        self.compile_block_stmts(body, false)?;
+                        if !self.has_terminator() {
+                            let i2 = self.builder.build_load(i64_ty, i_ptr, "i").unwrap();
+                            let inc = self.builder.build_int_add(i2.into_int_value(), i64_ty.const_int(1, false), "inc").unwrap();
+                            self.builder.build_store(i_ptr, inc).unwrap();
+                            self.builder.build_unconditional_branch(cond_bb).unwrap();
+                        }
+                        self.builder.position_at_end(after_bb);
+                    }
+                    _ => {
+                        self.compile_expr(iterable)?;
+                        self.compile_block_stmts(body, false)?;
+                    }
                 }
-                self.builder.position_at_end(after_bb);
                 Ok(Some(i64_ty.const_zero().into()))
             }
             Stmt::Return { value } => {
