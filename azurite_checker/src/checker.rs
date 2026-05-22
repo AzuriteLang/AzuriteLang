@@ -26,9 +26,16 @@ impl Checker {
         let builtins = [
             ("print", Type::Func { params: vec![Type::String], ret: Box::new(Type::Void) }),
             ("println", Type::Func { params: vec![Type::String], ret: Box::new(Type::Void) }),
+            ("print_int", Type::Func { params: vec![Type::Int], ret: Box::new(Type::Void) }),
             ("len", Type::Func { params: vec![Type::String], ret: Box::new(Type::Int) }),
             ("int", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Int) }),
             ("float", Type::Func { params: vec![Type::Int], ret: Box::new(Type::Float) }),
+            ("sqrt", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
+            ("abs", Type::Func { params: vec![Type::Int], ret: Box::new(Type::Int) }),
+            ("read", Type::Func { params: vec![], ret: Box::new(Type::String) }),
+            ("input", Type::Func { params: vec![Type::String], ret: Box::new(Type::String) }),
+            ("exit", Type::Func { params: vec![Type::Int], ret: Box::new(Type::Void) }),
+            ("to_string", Type::Func { params: vec![Type::Int], ret: Box::new(Type::String) }),
         ];
         for (name, type_) in builtins {
             self.scope.insert(name, Symbol {

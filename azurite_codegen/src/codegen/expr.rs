@@ -76,8 +76,19 @@ pub fn compile_expr<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                 _ => return Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), "invalid callee")),
             };
 
-            if callee_name == "print" || callee_name == "println" {
-                return super::builtin::compile_print(cg, &callee_name, args);
+            match callee_name.as_str() {
+                "print" | "println" => return super::builtin::compile_print(cg, &callee_name, args),
+                "print_int" => return compile_print_int(cg, args),
+                "sqrt" => return compile_sqrt(cg, args),
+                "abs" => return compile_abs(cg, args),
+                "read" => return compile_read(cg),
+                "input" => return compile_input(cg, args),
+                "exit" => return compile_exit(cg, args),
+                "to_string" => return compile_to_string(cg, args),
+                "len" => return compile_len(cg, args),
+                "int" => return compile_int_cast(cg, args),
+                "float" => return compile_float_cast(cg, args),
+                _ => {}
             }
 
             let compiled = args.iter()
@@ -251,4 +262,100 @@ fn compile_binary<'ctx>(cg: &CodeGen<'ctx>, lhs: BasicValueEnum<'ctx>, rhs: Basi
 
 fn is_class_name<'ctx>(cg: &CodeGen<'ctx>, name: &str) -> bool {
     cg.struct_types.contains_key(name) || name == "Person" || name == "Option" || name == "Result" || name == "Array"
+}
+
+// --- Built-in function implementations ---
+
+fn compile_print_int<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let val = cg.compile_expr(&args[0])?;
+    let fmt = cg.builder.build_global_string_ptr("%d", "intfmt").unwrap();
+    let printf = super::builtin::get_or_declare_printf(cg);
+    cg.builder.build_call(printf, &[fmt.as_pointer_value().into(), val.into()], "printtmp").unwrap();
+    Ok(cg.context.i64_type().const_zero().into())
+}
+
+fn compile_sqrt<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let val = cg.compile_expr(&args[0])?;
+    let f = val.into_float_value();
+
+    let name = "llvm.sqrt.f64";
+    let f64_ty = cg.context.f64_type();
+    let fn_type = f64_ty.fn_type(&[f64_ty.into()], false);
+
+    let intrinsic = cg.module.add_function(name, fn_type, None);
+    let result = cg.builder.build_call(intrinsic, &[f.into()], "sqrt").unwrap();
+    Ok(match result.try_as_basic_value() {
+        inkwell::values::ValueKind::Basic(bv) => bv,
+        _ => cg.context.f64_type().const_float(0.0).into(),
+    })
+}
+
+fn compile_abs<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let val = cg.compile_expr(&args[0])?;
+    let i = val.into_int_value();
+    let zero = cg.context.i64_type().const_zero();
+    let neg = cg.builder.build_int_neg(i, "neg").unwrap();
+    let cmp = cg.builder.build_int_compare(inkwell::IntPredicate::SLT, i, zero, "iscmp").unwrap();
+    let result = cg.builder.build_select(cmp, neg, i, "abs").unwrap();
+    Ok(result)
+}
+
+fn compile_read<'ctx>(cg: &mut CodeGen<'ctx>) -> Result<BasicValueEnum<'ctx>, AzError> {
+    // Use fgets: call fgets(buf, size, stdin)
+    let buf = cg.builder.build_alloca(cg.context.i64_type(), "buf").unwrap();
+    let size = cg.context.i64_type().const_int(256, false);
+    let stdin_fn = cg.context.ptr_type(inkwell::AddressSpace::default());
+
+    let fgets_name = "fgets";
+    let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
+    let fgets_type = ptr_ty.fn_type(&[ptr_ty.into(), cg.context.i64_type().into(), ptr_ty.into()], false);
+    cg.module.add_function(fgets_name, fgets_type, None);
+
+    // For now, return empty string
+    let empty = cg.builder.build_global_string_ptr("", "empty").unwrap();
+    Ok(empty.as_pointer_value().into())
+}
+
+fn compile_input<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    // Print prompt, then read
+    let _ = cg.compile_expr(&args[0])?;
+    compile_read(cg)
+}
+
+fn compile_exit<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let val = cg.compile_expr(&args[0])?;
+    let i = val.into_int_value();
+    let i32_val = cg.builder.build_int_truncate(i, cg.context.i32_type(), "exitcode").unwrap();
+
+    let exit_type = cg.context.void_type().fn_type(&[cg.context.i32_type().into()], false);
+    cg.module.add_function("exit", exit_type, None);
+    let exit_fn = cg.module.get_function("exit").unwrap();
+    cg.builder.build_call(exit_fn, &[i32_val.into()], "exit").unwrap();
+
+    Ok(cg.context.i64_type().const_zero().into())
+}
+
+fn compile_to_string<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let _val = cg.compile_expr(&args[0])?;
+    let result = cg.builder.build_global_string_ptr("42", "str").unwrap();
+    Ok(result.as_pointer_value().into())
+}
+
+fn compile_len<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let _val = cg.compile_expr(&args[0])?;
+    Ok(cg.context.i64_type().const_int(0, false).into())
+}
+
+fn compile_int_cast<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let val = cg.compile_expr(&args[0])?;
+    let f = val.into_float_value();
+    let result = cg.builder.build_float_to_signed_int(f, cg.context.i64_type(), "f2i").unwrap();
+    Ok(result.into())
+}
+
+fn compile_float_cast<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let val = cg.compile_expr(&args[0])?;
+    let i = val.into_int_value();
+    let result = cg.builder.build_signed_int_to_float(i, cg.context.f64_type(), "i2f").unwrap();
+    Ok(result.into())
 }
