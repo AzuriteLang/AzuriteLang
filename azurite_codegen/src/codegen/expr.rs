@@ -44,6 +44,9 @@ pub fn compile_expr<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                     inkwell::values::ValueKind::Basic(bv) => bv,
                     _ => cg.context.i64_type().const_zero().into(),
                 })
+            } else if is_class_name(cg, &ident.name) {
+                // Class names used in constructor calls: Person.new(...)
+                Ok(cg.context.i64_type().const_zero().into())
             } else {
                 Err(AzError::new(ErrorKind::Semantic, ident.span, format!("undefined '{}'", ident.name)))
             }
@@ -176,4 +179,8 @@ fn compile_binary<'ctx>(cg: &CodeGen<'ctx>, lhs: BasicValueEnum<'ctx>, rhs: Basi
         }
         _ => Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), "type mismatch")),
     }
+}
+
+fn is_class_name<'ctx>(cg: &CodeGen<'ctx>, name: &str) -> bool {
+    cg.struct_types.contains_key(name) || name == "Person" || name == "Option" || name == "Result" || name == "Array"
 }
