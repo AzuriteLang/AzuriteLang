@@ -167,7 +167,7 @@ pub fn compile_expr<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
             let loaded = cg.builder.build_load(cg.context.i64_type(), elem, "loaded").unwrap();
             Ok(loaded)
         }
-        Expr::EnumVariant { enum_name: _en, variant, args } => {
+        Expr::EnumVariant { enum_name: _en, variant, .. } => {
             let tag = variant.as_bytes().iter().fold(0u64, |acc, b| acc.wrapping_add(*b as u64));
             let tag_val = cg.context.i8_type().const_int(tag % 256, false);
             Ok(tag_val.into())
@@ -193,10 +193,8 @@ pub fn compile_expr<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
             Ok(cg.context.i64_type().const_zero().into())
         }
         Expr::Range { start, end } => {
-            let s = cg.compile_expr(start)?;
-            let e = cg.compile_expr(end)?;
-            // Return (start, end) as a pair? For now just return end
-            Ok(e)
+            let _s = cg.compile_expr(start)?;
+            cg.compile_expr(end)
         }
         Expr::While { condition, body } => {
             let cf = cg.function.unwrap();
@@ -267,7 +265,7 @@ fn compile_binary<'ctx>(cg: &CodeGen<'ctx>, lhs: BasicValueEnum<'ctx>, rhs: Basi
                 let buf = cg.builder.build_alloca(i64_ty.array_type(256), "strbuf").unwrap();
                 let fmt_str = cg.builder.build_global_string_ptr("%s%s", "concatfmt").unwrap();
 
-                let result = cg.builder.build_call(
+                cg.builder.build_call(
                     cg.module.get_function("sprintf").unwrap(),
                     &[buf.into(), fmt_str.as_pointer_value().into(), l.into(), r.into()],
                     "sprintf",
@@ -321,14 +319,12 @@ fn compile_abs<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValue
 
 fn compile_read<'ctx>(cg: &mut CodeGen<'ctx>) -> Result<BasicValueEnum<'ctx>, AzError> {
     // Use fgets: call fgets(buf, size, stdin)
-    let buf = cg.builder.build_alloca(cg.context.i64_type(), "buf").unwrap();
-    let size = cg.context.i64_type().const_int(256, false);
-    let stdin_fn = cg.context.ptr_type(inkwell::AddressSpace::default());
+    let _buf = cg.builder.build_alloca(cg.context.i64_type(), "buf").unwrap();
+    let _size = cg.context.i64_type().const_int(256, false);
 
-    let fgets_name = "fgets";
     let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
     let fgets_type = ptr_ty.fn_type(&[ptr_ty.into(), cg.context.i64_type().into(), ptr_ty.into()], false);
-    cg.module.add_function(fgets_name, fgets_type, None);
+    cg.module.add_function("fgets", fgets_type, None);
 
     // For now, return empty string
     let empty = cg.builder.build_global_string_ptr("", "empty").unwrap();
@@ -369,13 +365,13 @@ fn compile_len<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValue
     let strlen_type = i64_ty.fn_type(&[ptr_ty.into()], false);
     cg.module.add_function("strlen", strlen_type, None);
 
-    let result = cg.builder.build_call(
+    let len = cg.builder.build_call(
         cg.module.get_function("strlen").unwrap(),
         &[ptr.into()],
         "len",
     ).unwrap();
 
-    Ok(match result.try_as_basic_value() {
+    Ok(match len.try_as_basic_value() {
         inkwell::values::ValueKind::Basic(bv) => bv,
         _ => cg.context.i64_type().const_zero().into(),
     })

@@ -36,7 +36,7 @@ fn compile_method<'ctx>(
     class_name: &Ident,
     llvm_struct: &inkwell::types::StructType<'ctx>,
     field_names: &[String],
-    field_types: &[BasicTypeEnum<'ctx>],
+    _field_types: &[BasicTypeEnum<'ctx>],
     mname: &Ident,
     params: &[Param],
     return_type: &Option<Type>,
@@ -44,8 +44,6 @@ fn compile_method<'ctx>(
 ) -> Result<(), AzError> {
     let is_ctor = mname.name == "new";
     let self_type = cg.context.ptr_type(inkwell::AddressSpace::default());
-    let struct_ptr_type: BasicTypeEnum = cg.context.ptr_type(inkwell::AddressSpace::default()).into();
-
     let fn_name = format!("{}_{}", class_name.name, mname.name);
 
     if is_ctor {

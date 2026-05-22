@@ -9,7 +9,7 @@ use azurite_parser::ast::*;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
-use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
+use inkwell::types::{BasicMetadataTypeEnum, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue, IntValue, PointerValue};
 use inkwell::IntPredicate;
 
@@ -117,7 +117,7 @@ impl<'ctx> CodeGen<'ctx> {
             Stmt::Import { .. } | Stmt::Enum { .. } => {
                 Ok(None)
             }
-            Stmt::For { name, iterable, body } => {
+            Stmt::For { name, iterable: _iterable, body } => {
                 let cf = self.function.unwrap();
 
                 // Check for range: for i in 0..10
