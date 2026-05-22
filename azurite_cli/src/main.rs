@@ -29,6 +29,8 @@ enum Cli {
         #[arg(short, long, help = "Output file path")]
         output: Option<PathBuf>,
     },
+    #[command(about = "Interactive REPL")]
+    Repl,
 }
 
 fn main() {
@@ -39,11 +41,47 @@ fn main() {
         Cli::Parse { file } => cmd_parse(file),
         Cli::Check { file } => cmd_check(file),
         Cli::Build { file, output } => cmd_build(file, output.as_ref()),
+        Cli::Repl => cmd_repl(),
     };
 
     if let Err(_msg) = result {
         std::process::exit(1);
     }
+}
+
+fn cmd_repl() -> Result<(), String> {
+    eprintln!("AzuriteLang REPL (type 'exit' to quit)");
+    let mut input = String::new();
+    loop {
+        input.clear();
+        eprint!("> ");
+        use std::io::Write;
+        std::io::stdout().flush().ok();
+        let read = std::io::stdin().read_line(&mut input);
+        if read.is_err() || read.unwrap_or(0) == 0 { break; }
+        let trimmed = input.trim();
+        if trimmed == "exit" || trimmed.is_empty() { if trimmed == "exit" { break; } continue; }
+        match Lexer::new(trimmed).tokenize() {
+            Ok(tokens) => {
+                let kinds: Vec<String> = tokens.iter().map(|t| t.kind.to_string()).collect();
+                println!("  tokens: {}", kinds.join(" "));
+                match Parser::new(tokens).parse_program() {
+                    Ok(prog) => {
+                        let mut checker = Checker::new();
+                        match checker.check_program(&prog) {
+                            Ok(()) => println!("  OK"),
+                            Err(errs) => {
+                                for err in &errs { eprintln!("  type error: {}", err.message); }
+                            }
+                        }
+                    }
+                    Err(e) => eprintln!("  parse error: {}", e.message),
+                }
+            }
+            Err(e) => eprintln!("  lex error: {}", e),
+        }
+    }
+    Ok(())
 }
 
 fn read_file(path: &PathBuf) -> Result<String, String> {

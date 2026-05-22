@@ -1,7 +1,7 @@
 use azurite_errors::{AzError, ErrorKind};
 use azurite_lexer::Span;
 use azurite_parser::ast::*;
-use inkwell::values::{BasicValueEnum, BasicValue};
+use inkwell::values::BasicValueEnum;
 use inkwell::IntPredicate;
 use crate::codegen::CodeGen;
 

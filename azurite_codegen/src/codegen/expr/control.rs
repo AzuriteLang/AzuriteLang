@@ -1,8 +1,7 @@
 use azurite_errors::{AzError, ErrorKind};
 use azurite_lexer::Span;
 use azurite_parser::ast::*;
-use inkwell::types::{BasicType, BasicTypeEnum};
-use inkwell::values::{BasicValueEnum, BasicMetadataValueEnum};
+use inkwell::values::BasicValueEnum;
 use crate::codegen::CodeGen;
 
 pub fn compile_control<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicValueEnum<'ctx>, AzError> {

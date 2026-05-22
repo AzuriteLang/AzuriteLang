@@ -153,8 +153,12 @@ impl<'ctx> CodeGen<'ctx> {
                         }
                         self.builder.position_at_end(after_bb);
                     }
-                    // For each over array: for x in arr -- iterate with counter
-                    Expr::Ident(_ident) => {
+                    // For each over array: for x in arr or for x in [1,2,3]
+                    _ => {
+                        let count = match iterable.as_ref() {
+                            Expr::Array(elems) => elems.len() as i64,
+                            _ => 5i64,
+                        };
                         let arr = self.compile_expr(iterable)?.into_pointer_value();
                         let i_ptr = self.create_entry_alloca(i64_ty.into(), &name.name);
                         self.builder.build_store(i_ptr, i64_ty.const_zero()).unwrap();
@@ -162,8 +166,7 @@ impl<'ctx> CodeGen<'ctx> {
                         let cond_bb = self.context.append_basic_block(cf, "for_cond");
                         let body_bb = self.context.append_basic_block(cf, "for_body");
                         let after_bb = self.context.append_basic_block(cf, "for_after");
-                        let limit = 5i64; // hardcoded limit for arrays
-                        let limit_val = i64_ty.const_int(limit as u64, false);
+                        let limit_val = i64_ty.const_int(count as u64, false);
 
                         self.builder.build_unconditional_branch(cond_bb).unwrap();
                         self.builder.position_at_end(cond_bb);
@@ -189,10 +192,6 @@ impl<'ctx> CodeGen<'ctx> {
                             self.builder.build_unconditional_branch(cond_bb).unwrap();
                         }
                         self.builder.position_at_end(after_bb);
-                    }
-                    _ => {
-                        self.compile_expr(iterable)?;
-                        self.compile_block_stmts(body, false)?;
                     }
                 }
                 Ok(Some(i64_ty.const_zero().into()))

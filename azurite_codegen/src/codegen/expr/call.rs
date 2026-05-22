@@ -1,7 +1,7 @@
 use azurite_errors::{AzError, ErrorKind};
 use azurite_lexer::Span;
 use azurite_parser::ast::*;
-use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, IntValue};
+use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum};
 use inkwell::IntPredicate;
 use crate::codegen::CodeGen;
 
@@ -39,7 +39,7 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
         Expr::MethodCall { obj, method, args } => {
             // Constructor call: ClassName.new(...)
             if method == "new" {
-                if let Expr::Ident(ident) = obj {
+                if let Expr::Ident(ident) = obj.as_ref() {
                     let fn_name = format!("{}_{}", ident.name, method);
                     if let Some(f) = cg.module.get_function(&fn_name) {
                         let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
