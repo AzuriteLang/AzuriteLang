@@ -11,7 +11,7 @@ fn check(src: &str) -> Result<(), Vec<AzError>> {
 
 #[test]
 fn test_accepts_valid_program() {
-    assert!(check("func main() { let x: int = 42 let y = x + 1 print(\"ok\") }").is_ok());
+    assert!(check("func main() { let x: int = 42 let y = x + 1 print(0) }").is_ok());
 }
 
 #[test]
@@ -31,5 +31,5 @@ fn test_accepts_void_return() {
 
 #[test]
 fn test_accepts_nested_scope() {
-    assert!(check("func main() { let x = \"a\" if true { let x = \"b\" println(x) } }").is_ok());
+    assert!(check("func main() { let x = \"a\" if true { let x = \"b\" print(x) } }").is_ok());
 }

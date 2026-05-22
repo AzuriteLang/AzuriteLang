@@ -17,13 +17,12 @@ class Person {
     age: int
 
     func new(name: string, age: int) {
-        // constructor
     }
 
     func greet(self) {
-        println("Hi, I'm " + self.name)
+        print("Hi, I'm " + self.name)
         print("Age: ")
-        print_int(self.age)
+        print(self.age)
     }
 }
 
@@ -59,116 +58,84 @@ func is_prime(x: int) -> bool {
 
 // --- Main ---
 func main() {
-    println("=== AzuriteLang Big Demo ===")
-    println("")
+    print("=== AzuriteLang Big Demo ===")
 
     // --- Hello ---
-    println("--- Hello ---")
-    println("Hello, Azurite!")
+    print("--- Hello ---")
+    print("Hello, Azurite!")
 
     // --- Math ---
-    println("")
-    println("--- Math ---")
+    print("--- Math ---")
 
     let n = 10
     print("fibonacci(")
-    print_int(n)
+    print(n)
     print(") = ")
-    print_int(fibonacci(n))
-    println("")
+    print(fibonacci(n))
 
     print("factorial(6) = ")
-    print_int(factorial(6))
-    println("")
+    print(factorial(6))
 
     print("is_prime(17) = ")
-    if is_prime(17) { println("true") } else { println("false") }
-
-    print("sqrt(2.0) = ")
-    print_int(sqrt(2.0))
-    println("")
+    if is_prime(17) { print("true") } else { print("false") }
 
     print("abs(-42) = ")
-    print_int(abs(-42))
-    println("")
+    print(abs(-42))
 
     // --- Loops ---
-    println("")
-    println("--- Loops ---")
+    print("--- Loops ---")
 
-    println("Counting 1 to 5:")
+    print("Counting 1 to 5:")
     let i = 1
     while i <= 5 {
-        print_int(i)
-        print(" ")
+        print(i)
         i = i + 1
     }
-    println("")
 
-    println("For loop 0 to 4:")
+    print("For loop 0 to 4:")
     for j in 0..5 {
-        print_int(j)
-        print(" ")
+        print(j)
     }
-    println("")
 
     // --- Arrays ---
-    println("")
-    println("--- Arrays ---")
+    print("--- Arrays ---")
 
     let arr = [10, 20, 30, 40, 50]
     print("Array: ")
     let idx = 0
     while idx < 5 {
-        print_int(arr[idx])
-        print(" ")
+        print(arr[idx])
         idx = idx + 1
     }
-    println("")
 
     // --- Strings ---
-    println("")
-    println("--- Strings ---")
+    print("--- Strings ---")
 
     let msg = "Hello"
-    let name = "World"
-    let combined = msg + ", " + name + "!"
-    println(combined)
-
     print("Length of '")
     print(msg)
     print("' = ")
-    print_int(len(msg))
-    println("")
+    print(len(msg))
 
     // --- Match ---
-    println("")
-    println("--- Match ---")
+    print("--- Match ---")
 
     let x = 3
     match x {
-        1 => println("one")
-        2 => println("two")
-        _ => println("three or more")
+        1 => print("one")
+        2 => print("two")
+        _ => print("three or more")
     }
 
     // --- Conversions ---
-    println("")
-    println("--- Conversions ---")
+    print("--- Conversions ---")
 
     let pi: float = 3.14159
     let pi_int = int(pi)
     print("int(3.14159) = ")
-    print_int(pi_int)
-    println("")
+    print(pi_int)
 
-    let answer: int = 42
-    let answer_str = to_string(answer)
-    print("to_string(42) = ")
-    println(answer_str)
-
-    // --- Exit ---
-    println("")
-    println("=== Done! ===")
+    // --- Done ---
+    print("=== Done! ===")
     exit(0)
 }

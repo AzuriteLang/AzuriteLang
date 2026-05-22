@@ -24,9 +24,7 @@ impl Checker {
 
     fn register_builtins(&mut self) {
         let builtins = [
-            ("print", Type::Func { params: vec![Type::String], ret: Box::new(Type::Void) }),
-            ("println", Type::Func { params: vec![Type::String], ret: Box::new(Type::Void) }),
-            ("print_int", Type::Func { params: vec![Type::Int], ret: Box::new(Type::Void) }),
+            ("print", Type::Func { params: vec![], ret: Box::new(Type::Void) }),
             ("len", Type::Func { params: vec![Type::String], ret: Box::new(Type::Int) }),
             ("int", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Int) }),
             ("float", Type::Func { params: vec![Type::Int], ret: Box::new(Type::Float) }),
@@ -35,7 +33,6 @@ impl Checker {
             ("read", Type::Func { params: vec![], ret: Box::new(Type::String) }),
             ("input", Type::Func { params: vec![Type::String], ret: Box::new(Type::String) }),
             ("exit", Type::Func { params: vec![Type::Int], ret: Box::new(Type::Void) }),
-            ("to_string", Type::Func { params: vec![Type::Int], ret: Box::new(Type::String) }),
         ];
         for (name, type_) in builtins {
             self.scope.insert(name, Symbol {
@@ -265,7 +262,7 @@ impl Checker {
                 let callee_type = self.check_expr(callee);
                 match callee_type {
                     Some(Type::Func { params, ret }) => {
-                        if params.len() != args.len() {
+                        if !params.is_empty() && params.len() != args.len() {
                             self.error(azurite_lexer::Span::new(0, 0, 0, 0), format!(
                                 "expected {} arguments, got {}",
                                 params.len(), args.len()

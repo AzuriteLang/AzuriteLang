@@ -80,17 +80,15 @@ pub fn compile_expr<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
             };
 
             match callee_name.as_str() {
-                "print" | "println" => return super::builtin::compile_print(cg, &callee_name, args),
-                "print_int" => return compile_print_int(cg, args),
+                "print" => return super::builtin::compile_print(cg, args),
                 "sqrt" => return compile_sqrt(cg, args),
                 "abs" => return compile_abs(cg, args),
-                "read" => return compile_read(cg),
-                "input" => return compile_input(cg, args),
-                "exit" => return compile_exit(cg, args),
-                "to_string" => return compile_to_string(cg, args),
                 "len" => return compile_len(cg, args),
                 "int" => return compile_int_cast(cg, args),
                 "float" => return compile_float_cast(cg, args),
+                "read" => return compile_read(cg),
+                "input" => return compile_input(cg, args),
+                "exit" => return compile_exit(cg, args),
                 _ => {}
             }
 
@@ -265,14 +263,6 @@ fn is_class_name<'ctx>(cg: &CodeGen<'ctx>, name: &str) -> bool {
 
 // --- Built-in function implementations ---
 
-fn compile_print_int<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let val = cg.compile_expr(&args[0])?;
-    let fmt = cg.builder.build_global_string_ptr("%d", "intfmt").unwrap();
-    let printf = super::builtin::get_or_declare_printf(cg);
-    cg.builder.build_call(printf, &[fmt.as_pointer_value().into(), val.into()], "printtmp").unwrap();
-    Ok(cg.context.i64_type().const_zero().into())
-}
-
 fn compile_sqrt<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
     let val = cg.compile_expr(&args[0])?;
     let f = val.into_float_value();
@@ -330,12 +320,6 @@ fn compile_exit<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValu
     cg.builder.build_call(exit_fn, &[i32_val.into()], "exit").unwrap();
 
     Ok(cg.context.i64_type().const_zero().into())
-}
-
-fn compile_to_string<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let _val = cg.compile_expr(&args[0])?;
-    let result = cg.builder.build_global_string_ptr("42", "str").unwrap();
-    Ok(result.as_pointer_value().into())
 }
 
 fn compile_len<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
