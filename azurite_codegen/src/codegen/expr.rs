@@ -135,14 +135,15 @@ pub fn compile_expr<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
             let count = elems.len() as u32;
             if count == 0 { return Ok(cg.context.i64_type().const_zero().into()); }
 
-            let array_type = cg.context.i64_type().array_type(count);
+            let i64_ty = cg.context.i64_type();
+            let array_type = i64_ty.array_type(count);
+            let size = i64_ty.const_int(count as u64, false);
 
-            // Heap allocation
-            let ptr = cg.builder.build_malloc(array_type, "arr").unwrap();
+            let ptr = cg.builder.build_array_malloc(i64_ty, size, "arr").unwrap();
             for (i, elem) in elems.iter().enumerate() {
                 let val = cg.compile_expr(elem)?;
                 let gep = unsafe {
-                    cg.builder.build_gep(array_type, ptr, &[cg.context.i32_type().const_int(i as u64, false)], "idx").unwrap()
+                    cg.builder.build_gep(i64_ty, ptr, &[cg.context.i32_type().const_int(i as u64, false)], "idx").unwrap()
                 };
                 cg.builder.build_store(gep, val).unwrap();
             }
