@@ -1,6 +1,5 @@
 use azurite_parser::ast::Program;
 
-#[derive(Debug)]
 pub struct CodeGen;
 
 impl CodeGen {
@@ -9,7 +8,8 @@ impl CodeGen {
     }
 
     pub fn compile_program(&self, _program: &Program) -> Result<(), String> {
-        println!("codegen: LLVM backend not enabled (use --features llvm)");
+        println!("[codegen] LLVM backend not enabled.");
+        println!("[codegen] Rebuild with: cargo build --features llvm");
         Ok(())
     }
 }

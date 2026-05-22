@@ -129,7 +129,7 @@ fn cmd_build(file: &PathBuf, _output: Option<&PathBuf>) -> Result<(), String> {
                 {
                     let context = Context::create();
                     let mut codegen = CodeGen::new(&context, "azurite_program");
-                    codegen.compile_program(&_program)?;
+                    codegen.compile_program(&_program).map_err(|e| e.to_string())?;
                     let output_path = _output.unwrap_or(&file.with_extension("ll")).clone();
                     codegen.module().print_to_file(&output_path)
                         .map_err(|e| format!("cannot write output: {}", e))?;
@@ -139,7 +139,7 @@ fn cmd_build(file: &PathBuf, _output: Option<&PathBuf>) -> Result<(), String> {
                 {
                     let _ = _output;
                     let codegen = CodeGen::new();
-                    codegen.compile_program(&_program)?;
+                    codegen.compile_program(&_program).map_err(|e| e.to_string())?;
                 }
                 Ok(())
             }

@@ -8,8 +8,10 @@ doctest = false
 test = false
 
 [dependencies]
+azurite_lexer = { path = "../azurite_lexer" }
 azurite_parser = { path = "../azurite_parser" }
-inkwell = { version = "0.4", optional = true }
+azurite_errors = { path = "../azurite_errors" }
+inkwell = { version = "0.9", optional = true, default-features = true, features = ["llvm22-1-no-llvm-linking"] }
 
 [features]
 default = []
