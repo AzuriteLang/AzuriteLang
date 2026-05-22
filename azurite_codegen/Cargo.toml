@@ -3,6 +3,9 @@ name = "azurite_codegen"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+doctest = false
+
 [dependencies]
 azurite_parser = { path = "../azurite_parser" }
 inkwell = { version = "0.4", optional = true }
