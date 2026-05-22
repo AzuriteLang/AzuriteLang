@@ -1,0 +1,10 @@
+[workspace]
+members = [
+    "azurite_cli",
+    "azurite_lexer",
+    "azurite_parser",
+    "azurite_codegen",
+    "azurite_checker",
+    "azurite_test",
+]
+resolver = "2"

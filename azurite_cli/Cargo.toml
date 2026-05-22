@@ -1,0 +1,15 @@
+[package]
+name = "azurite_cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+azurite_lexer = { path = "../azurite_lexer" }
+azurite_parser = { path = "../azurite_parser" }
+azurite_codegen = { path = "../azurite_codegen" }
+azurite_checker = { path = "../azurite_checker" }
+clap = { version = "4", features = ["derive"] }
+
+[features]
+default = []
+llvm = ["azurite_codegen/llvm"]

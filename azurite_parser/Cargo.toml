@@ -1,0 +1,8 @@
+[package]
+name = "azurite_parser"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+azurite_lexer = { path = "../azurite_lexer" }
+thiserror = "2"

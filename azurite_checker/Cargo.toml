@@ -1,0 +1,8 @@
+[package]
+name = "azurite_checker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+azurite_lexer = { path = "../azurite_lexer" }
+azurite_parser = { path = "../azurite_parser" }

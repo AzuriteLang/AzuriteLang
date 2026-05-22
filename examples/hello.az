@@ -1,0 +1,6 @@
+// AzuriteLang example
+
+func main() {
+    let msg: string = "Hello, Azurite!"
+    print(msg)
+}
