@@ -94,6 +94,9 @@ impl Checker {
                 }
                 type_
             }
+            Stmt::Enum { name, variants } => {
+                None
+            }
             Stmt::Class { name, fields, methods } => {
                 for method in methods {
                     if let Stmt::Func { name: mname, params, .. } = method {
@@ -209,6 +212,19 @@ impl Checker {
             Expr::MethodCall { obj, method, args } => {
                 self.check_expr(obj);
                 for arg in args { self.check_expr(arg); }
+                Some(Type::Void)
+            }
+            Expr::EnumVariant { args, .. } => {
+                for arg in args { self.check_expr(arg); }
+                Some(Type::Void)
+            }
+            Expr::Array(elems) => {
+                for e in elems { self.check_expr(e); }
+                Some(Type::Void)
+            }
+            Expr::Index { obj, index } => {
+                self.check_expr(obj);
+                self.check_expr(index);
                 Some(Type::Void)
             }
             Expr::Ident(ident) => {

@@ -26,6 +26,10 @@ pub enum Stmt {
         fields: Vec<ClassField>,
         methods: Vec<Stmt>,
     },
+    Enum {
+        name: Ident,
+        variants: Vec<EnumVariant>,
+    },
     If {
         condition: Box<Expr>,
         then_branch: Box<Expr>,
@@ -45,6 +49,12 @@ pub enum Stmt {
 pub struct ClassField {
     pub name: Ident,
     pub type_: Type,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumVariant {
+    pub name: Ident,
+    pub types: Vec<Type>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,6 +88,16 @@ pub enum Expr {
     FieldAccess {
         obj: Box<Expr>,
         field: String,
+    },
+    EnumVariant {
+        enum_name: String,
+        variant: String,
+        args: Vec<Expr>,
+    },
+    Array(Vec<Expr>),
+    Index {
+        obj: Box<Expr>,
+        index: Box<Expr>,
     },
     Block(Vec<Stmt>),
     If {

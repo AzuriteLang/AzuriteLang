@@ -119,6 +119,44 @@ pub fn compile_expr<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
             cg.builder.position_at_end(merge_bb);
             Ok(cg.context.i64_type().const_zero().into())
         }
+        Expr::Array(elems) => {
+            let count = elems.len() as u32;
+            if count == 0 { return Ok(cg.context.i64_type().const_zero().into()); }
+
+            let array_type = cg.context.i64_type().array_type(count);
+
+            let alloca = cg.create_entry_alloca(array_type.into(), "arr");
+            for (i, elem) in elems.iter().enumerate() {
+                let val = cg.compile_expr(elem)?;
+                let ptr = unsafe {
+                    cg.builder.build_gep(array_type, alloca, &[cg.context.i32_type().const_int(i as u64, false)], "idx").unwrap()
+                };
+                cg.builder.build_store(ptr, val).unwrap();
+            }
+            Ok(alloca.into())
+        }
+        Expr::Index { obj, index } => {
+            let obj_val = cg.compile_expr(obj)?;
+            let idx_val = cg.compile_expr(index)?;
+            let ptr = obj_val.into_pointer_value();
+            let idx_int = idx_val.into_int_value();
+
+            let elem = unsafe {
+                cg.builder.build_gep(
+                    cg.context.i64_type(),
+                    ptr,
+                    &[cg.context.i32_type().const_zero(), idx_int],
+                    "elem",
+                ).unwrap()
+            };
+            let loaded = cg.builder.build_load(cg.context.i64_type(), elem, "loaded").unwrap();
+            Ok(loaded)
+        }
+        Expr::EnumVariant { enum_name: _en, variant, args } => {
+            let tag = variant.as_bytes().iter().fold(0u64, |acc, b| acc.wrapping_add(*b as u64));
+            let tag_val = cg.context.i8_type().const_int(tag % 256, false);
+            Ok(tag_val.into())
+        }
         Expr::While { condition, body } => {
             let cf = cg.function.unwrap();
             let cond_bb = cg.context.append_basic_block(cf, "while_cond");

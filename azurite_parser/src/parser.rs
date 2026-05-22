@@ -39,6 +39,7 @@ impl Parser {
             Some(TokenKind::Let) => self.parse_let(),
             Some(TokenKind::Func) => self.parse_func(),
             Some(TokenKind::Class) => self.parse_class(),
+            Some(TokenKind::Enum) => self.parse_enum(),
             Some(TokenKind::If) => {
                 let expr = self.parse_if_expr()?;
                 if let Expr::If { condition, then_branch, else_branch } = expr {
@@ -58,6 +59,38 @@ impl Parser {
                 Ok(Stmt::Expr(expr))
             }
         }
+    }
+
+    fn parse_enum(&mut self) -> Result<Stmt, AzError> {
+        self.advance();
+        let name = self.parse_ident()?;
+        self.expect(TokenKind::LBrace, "expected '{' after enum name")?;
+        let mut variants = Vec::new();
+        loop {
+            match self.peek_kind() {
+                Some(TokenKind::RBrace) | None => break,
+                Some(TokenKind::Comma) => { self.advance(); }
+                _ => {
+                    let vname = self.parse_ident()?;
+                    let types = if self.peek_kind() == Some(TokenKind::LParen) {
+                        self.advance();
+                        let mut ts = Vec::new();
+                        loop {
+                            match self.peek_kind() {
+                                Some(TokenKind::RParen) | None => break,
+                                Some(TokenKind::Comma) => { self.advance(); }
+                                _ => { ts.push(self.parse_type()?); }
+                            }
+                        }
+                        self.expect(TokenKind::RParen, "expected ')'")?;
+                        ts
+                    } else { Vec::new() };
+                    variants.push(EnumVariant { name: vname, types });
+                }
+            }
+        }
+        self.expect(TokenKind::RBrace, "expected '}'")?;
+        Ok(Stmt::Enum { name, variants })
     }
 
     fn parse_class(&mut self) -> Result<Stmt, AzError> {
@@ -202,6 +235,7 @@ impl Parser {
                 expr
             }
             Some(TokenKind::LBrace) => self.parse_block()?,
+            Some(TokenKind::LBracket) => self.parse_array()?,
             Some(TokenKind::If) => self.parse_if_expr()?,
             Some(TokenKind::While) => self.parse_while_expr()?,
             Some(TokenKind::Minus) | Some(TokenKind::Not) => {
@@ -230,6 +264,12 @@ impl Parser {
                     }
                     self.expect(TokenKind::RParen, "expected ')' after arguments")?;
                     lhs = Expr::Call { callee: Box::new(lhs), args };
+                }
+                Some(TokenKind::LBracket) => {
+                    self.advance();
+                    let index = self.parse_expr(0)?;
+                    self.expect(TokenKind::RBracket, "expected ']' after index")?;
+                    lhs = Expr::Index { obj: Box::new(lhs), index: Box::new(index) };
                 }
                 Some(TokenKind::Dot) => {
                     self.advance();
@@ -269,6 +309,20 @@ impl Parser {
         }
 
         Ok(lhs)
+    }
+
+    fn parse_array(&mut self) -> Result<Expr, AzError> {
+        self.advance(); // consume '['
+        let mut elements = Vec::new();
+        loop {
+            match self.peek_kind() {
+                Some(TokenKind::RBracket) | None => break,
+                Some(TokenKind::Comma) => { self.advance(); }
+                _ => { elements.push(self.parse_expr(0)?); }
+            }
+        }
+        self.expect(TokenKind::RBracket, "expected ']'")?;
+        Ok(Expr::Array(elements))
     }
 
     fn parse_block(&mut self) -> Result<Expr, AzError> {
