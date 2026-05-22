@@ -101,17 +101,14 @@ impl Checker {
                 }
                 type_
             }
-            Stmt::Enum { name, variants } => {
+            Stmt::Import { .. } => {
                 None
             }
-            Stmt::Class { name, fields, methods } => {
+            Stmt::Enum { .. } => {
+                None
+            }
+            Stmt::Class { methods, .. } => {
                 for method in methods {
-                    if let Stmt::Func { name: mname, params, .. } = method {
-                        let mut all_params = vec![
-                            Param { name: Ident { name: "self".to_string(), span: name.span }, type_annotation: Some(azurite_parser::ast::Type::Name(name.name.clone())) }
-                        ];
-                        all_params.extend(params.iter().cloned());
-                    }
                     self.check_stmt(method);
                 }
                 None
@@ -225,10 +222,10 @@ impl Checker {
                 // self type resolved from method context
                 Some(Type::Void)
             }
-            Expr::FieldAccess { obj, field } => {
+            Expr::FieldAccess { obj, .. } => {
                 self.check_expr(obj)
             }
-            Expr::MethodCall { obj, method, args } => {
+            Expr::MethodCall { obj, args, .. } => {
                 self.check_expr(obj);
                 for arg in args { self.check_expr(arg); }
                 Some(Type::Void)

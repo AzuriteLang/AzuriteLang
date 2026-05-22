@@ -52,6 +52,7 @@ impl Parser {
                     Ok(Stmt::While { condition, body })
                 } else { unreachable!() }
             }
+            Some(TokenKind::Import) => self.parse_import(),
             Some(TokenKind::For) => self.parse_for(),
             Some(TokenKind::Return) => self.parse_return(),
             _ => {
@@ -190,6 +191,20 @@ impl Parser {
                 Ok(Ident { name: "self".to_string(), span })
             }
             _ => self.parse_ident(),
+        }
+    }
+
+    fn parse_import(&mut self) -> Result<Stmt, AzError> {
+        let span = self.current_span();
+        self.advance();
+        match self.peek_kind() {
+            Some(TokenKind::String(path)) => {
+                let path = path.clone();
+                self.advance();
+                self.expect_semicolon()?;
+                Ok(Stmt::Import { path, span })
+            }
+            _ => Err(self.err("expected string literal after 'import'")),
         }
     }
 

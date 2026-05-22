@@ -1,5 +1,7 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use azurite_parser::ast::Program;
 
 use clap::Parser as ClapParser;
 
@@ -48,6 +50,17 @@ fn read_file(path: &PathBuf) -> Result<String, String> {
     fs::read_to_string(path).map_err(|e| format!("cannot read {}: {}", path.display(), e))
 }
 
+fn resolve_module(source: &str) -> Result<Program, String> {
+    let (mut parser, _tokens) = Parser::from_source(source).map_err(|e| e.to_string())?;
+    parser.parse_program().map_err(|e| e.to_string())
+}
+
+fn resolve_main(file: &Path) -> Result<(Program, String), String> {
+    let source = read_file(&file.to_path_buf())?;
+    let program = resolve_module(&source)?;
+    Ok((program, source))
+}
+
 fn cmd_tokenize(file: &PathBuf) -> Result<(), String> {
     let source = read_file(file)?;
     match Lexer::new(&source).tokenize() {
@@ -70,52 +83,24 @@ fn cmd_tokenize(file: &PathBuf) -> Result<(), String> {
 }
 
 fn cmd_parse(file: &PathBuf) -> Result<(), String> {
-    let source = read_file(file)?;
-    match Parser::from_source(&source) {
-        Ok((mut parser, _tokens)) => match parser.parse_program() {
-            Ok(program) => {
-                println!("{:#?}", program);
-                Ok(())
-            }
-            Err(err) => {
-                Diagnostic::print(&source, &file.to_string_lossy(), &err);
-                Err("parse failed".to_string())
-            }
-        },
-        Err(err) => {
-            Diagnostic::print(&source, &file.to_string_lossy(), &err);
-            Err("parse failed".to_string())
-        }
-    }
+    let (program, _source) = resolve_main(file)?;
+    println!("{:#?}", program);
+    Ok(())
 }
 
 fn cmd_check(file: &PathBuf) -> Result<(), String> {
-    let source = read_file(file)?;
-    match Parser::from_source(&source) {
-        Ok((mut parser, _tokens)) => match parser.parse_program() {
-            Ok(program) => {
-                let mut checker = Checker::new();
-                match checker.check_program(&program) {
-                    Ok(()) => {
-                        println!("No type errors found.");
-                        Ok(())
-                    }
-                    Err(errors) => {
-                        for err in &errors {
-                            Diagnostic::print(&source, &file.to_string_lossy(), err);
-                        }
-                        Err(format!("{} type error(s) found", errors.len()))
-                    }
-                }
+    let (program, source) = resolve_main(file)?;
+    let mut checker = Checker::new();
+    match checker.check_program(&program) {
+        Ok(()) => {
+            println!("No type errors found.");
+            Ok(())
+        }
+        Err(errors) => {
+            for err in &errors {
+                Diagnostic::print(&source, &file.to_string_lossy(), err);
             }
-            Err(err) => {
-                Diagnostic::print(&source, &file.to_string_lossy(), &err);
-                Err("parse failed".to_string())
-            }
-        },
-        Err(err) => {
-            Diagnostic::print(&source, &file.to_string_lossy(), &err);
-            Err("parse failed".to_string())
+            Err(format!("{} type error(s) found", errors.len()))
         }
     }
 }

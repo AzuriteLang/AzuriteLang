@@ -47,6 +47,7 @@ pub enum Stmt {
         iterable: Box<Expr>,
         body: Box<Expr>,
     },
+    Import { path: String, span: Span },
     Expr(Expr),
 }
 

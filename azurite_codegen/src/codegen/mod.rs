@@ -115,7 +115,7 @@ impl<'ctx> CodeGen<'ctx> {
                 class::compile_class(self, name, fields, methods)?;
                 Ok(None)
             }
-            Stmt::Enum { .. } => {
+            Stmt::Import { .. } | Stmt::Enum { .. } => {
                 Ok(None)
             }
             Stmt::For { name, iterable, body } => {
