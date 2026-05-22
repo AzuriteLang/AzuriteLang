@@ -14,7 +14,7 @@ azurite_parser = { path = "../azurite_parser" }
 azurite_codegen = { path = "../azurite_codegen" }
 azurite_checker = { path = "../azurite_checker" }
 azurite_errors = { path = "../azurite_errors" }
-inkwell = { version = "0.9", optional = true, default-features = true, features = ["llvm22-1-no-llvm-linking"] }
+inkwell = { version = "0.9", optional = true, default-features = false, features = ["llvm22-1", "target-x86", "target-arm", "target-aarch64"] }
 clap = { version = "4", features = ["derive"] }
 
 [features]
