@@ -5,6 +5,7 @@ edition = "2021"
 
 [lib]
 doctest = false
+test = false
 
 [dependencies]
 azurite_parser = { path = "../azurite_parser" }

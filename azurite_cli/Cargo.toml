@@ -3,6 +3,11 @@ name = "azurite_cli"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "azurite_cli"
+path = "src/main.rs"
+test = false
+
 [dependencies]
 azurite_lexer = { path = "../azurite_lexer" }
 azurite_parser = { path = "../azurite_parser" }
