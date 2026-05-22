@@ -52,6 +52,9 @@ pub fn compile_expr<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
             }
         }
         Expr::Binary { left, op, right } => {
+            if *op == BinOp::Assign {
+                return compile_assign(cg, left, right);
+            }
             let lhs = cg.compile_expr(left)?;
             let rhs = cg.compile_expr(right)?;
             compile_binary(cg, lhs, rhs, *op)
@@ -358,4 +361,21 @@ fn compile_float_cast<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<Bas
     let i = val.into_int_value();
     let result = cg.builder.build_signed_int_to_float(i, cg.context.f64_type(), "i2f").unwrap();
     Ok(result.into())
+}
+
+fn compile_assign<'ctx>(cg: &mut CodeGen<'ctx>, left: &Expr, right: &Expr) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let var_name = match left {
+        Expr::Ident(i) => i.name.clone(),
+        _ => return Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), "left side of assign must be a variable")),
+    };
+
+    let rhs = cg.compile_expr(right)?;
+
+    match cg.variables.get(&var_name) {
+        Some((ptr, _ty)) => {
+            cg.builder.build_store(*ptr, rhs).unwrap();
+            Ok(rhs)
+        }
+        None => Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), format!("undefined variable '{}' in assignment", var_name))),
+    }
 }
