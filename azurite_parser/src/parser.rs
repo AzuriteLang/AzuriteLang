@@ -98,6 +98,22 @@ impl Parser {
     fn parse_class(&mut self) -> Result<Stmt, AzError> {
         self.advance();
         let name = self.parse_ident()?;
+        let type_params = if self.peek_kind() == Some(TokenKind::Less) {
+            self.advance();
+            let mut params = Vec::new();
+            loop {
+                match self.peek_kind() {
+                    Some(TokenKind::Greater) | None => break,
+                    Some(TokenKind::Comma) => { self.advance(); }
+                    _ => {
+                        let p = self.parse_ident()?;
+                        params.push(p.name);
+                    }
+                }
+            }
+            self.expect(TokenKind::Greater, "expected '>' after generic params")?;
+            params
+        } else { Vec::new() };
         self.expect(TokenKind::LBrace, "expected '{' after class name")?;
 
         let mut fields = Vec::new();
@@ -110,7 +126,7 @@ impl Parser {
             }
         }
         self.expect(TokenKind::RBrace, "expected '}' after class body")?;
-        Ok(Stmt::Class { name, fields, methods })
+        Ok(Stmt::Class { name, type_params, fields, methods })
     }
 
     fn parse_class_member(&mut self, fields: &mut Vec<ClassField>, methods: &mut Vec<Stmt>) -> Result<(), AzError> {
@@ -254,7 +270,22 @@ impl Parser {
             Some(TokenKind::Ident(name)) => {
                 let name = name.clone();
                 self.advance();
-                Ok(Type::Name(name))
+                // Check for generic params: Box<int>
+                if self.peek_kind() == Some(TokenKind::Less) {
+                    self.advance(); // consume '<'
+                    let mut params = Vec::new();
+                    loop {
+                        match self.peek_kind() {
+                            Some(TokenKind::Greater) | None => break,
+                            Some(TokenKind::Comma) => { self.advance(); }
+                            _ => { params.push(self.parse_type()?); }
+                        }
+                    }
+                    self.expect(TokenKind::Greater, "expected '>' after generic params")?;
+                    Ok(Type::Generic { name, params })
+                } else {
+                    Ok(Type::Name(name))
+                }
             }
             _ => Err(self.err(format!("expected type, found {}", self.peek_kind().unwrap()))),
         }

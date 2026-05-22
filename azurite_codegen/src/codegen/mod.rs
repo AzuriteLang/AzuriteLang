@@ -112,7 +112,7 @@ impl<'ctx> CodeGen<'ctx> {
                 self.function = None;
                 Ok(None)
             }
-            Stmt::Class { name, fields, methods } => {
+            Stmt::Class { name, fields, methods, .. } => {
                 class::compile_class(self, name, fields, methods)?;
                 Ok(None)
             }

@@ -23,6 +23,7 @@ pub enum Stmt {
     },
     Class {
         name: Ident,
+        type_params: Vec<String>,
         fields: Vec<ClassField>,
         methods: Vec<Stmt>,
     },
@@ -160,6 +161,7 @@ pub struct Param {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Name(String),
+    Generic { name: String, params: Vec<Type> },
     Ptr(Box<Type>),
     Array(Box<Type>, Option<usize>),
 }

@@ -11,7 +11,7 @@ fn parse_prog(src: &str) -> Program {
 fn test_class_declaration() {
     let prog = parse_prog("class Person { name: string age: int }");
     match &prog.statements[0] {
-        Stmt::Class { name, fields, methods } => {
+        Stmt::Class { name, fields, methods, .. } => {
             assert_eq!(name.name, "Person");
             assert_eq!(fields.len(), 2);
             assert_eq!(fields[0].name.name, "name");
@@ -26,7 +26,7 @@ fn test_class_declaration() {
 fn test_class_with_method() {
     let prog = parse_prog("class Foo { x: int func f(self) {} }");
     match &prog.statements[0] {
-        Stmt::Class { name, fields, methods } => {
+        Stmt::Class { name, fields, methods, .. } => {
             assert_eq!(name.name, "Foo");
             assert_eq!(fields.len(), 1);
             assert_eq!(methods.len(), 1);
