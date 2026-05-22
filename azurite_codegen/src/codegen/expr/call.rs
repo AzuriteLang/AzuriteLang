@@ -55,7 +55,41 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
             }
             // Instance method call: instance.method(args)
             let obj_val = cg.compile_expr(obj)?;
+            let obj_ptr = obj_val.into_pointer_value();
             let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
+
+            // Try vtable dispatch first (for classes with inheritance)
+            for (class_name, info) in &cg.struct_types {
+                if info.has_vtable && info.methods.iter().any(|m| m == method) {
+                    let i64_ty = cg.context.i64_type();
+                    let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
+
+                    // Load vtable pointer from object (first field)
+                    let vptr_gep = unsafe { cg.builder.build_gep(i64_ty, obj_ptr, &[i64_ty.const_zero()], "vptr_gep").unwrap() };
+                    let vtable = cg.builder.build_load(ptr_ty, vptr_gep, "vtable").unwrap().into_pointer_value();
+
+                    // Calculate method index
+                    if let Some(idx) = info.methods.iter().position(|m| m == method) {
+                        let idx_val = i64_ty.const_int(idx as u64, false);
+                        let fn_ptr = unsafe { cg.builder.build_gep(ptr_ty, vtable, &[idx_val], "fn_ptr").unwrap() };
+                        let _fn_val = cg.builder.build_load(ptr_ty, fn_ptr, "fn").unwrap().into_pointer_value();
+
+                        // Cast to function pointer and call (simplified: load function by name)
+                        let fn_name = format!("{}_{}", class_name, method);
+                        if let Some(f) = cg.module.get_function(&fn_name) {
+                            let mut meta: Vec<BasicMetadataValueEnum> = vec![obj_val.into()];
+                            for a in &compiled { meta.push((*a).into()); }
+                            let result = cg.builder.build_call(f, &meta, "calltmp").unwrap();
+                            return Ok(match result.try_as_basic_value() {
+                                inkwell::values::ValueKind::Basic(bv) => bv,
+                                _ => cg.context.i64_type().const_zero().into(),
+                            });
+                        }
+                    }
+                }
+            }
+
+            // Direct dispatch (for classes without inheritance)
             for (class_name, info) in &cg.struct_types {
                 if info.methods.iter().any(|m| m == method) {
                     let fn_name = format!("{}_{}", class_name, method);

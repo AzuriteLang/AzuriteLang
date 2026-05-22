@@ -18,6 +18,8 @@ pub struct ClassInfo<'ctx> {
     pub field_types: Vec<BasicTypeEnum<'ctx>>,
     pub methods: Vec<String>,
     pub llvm_struct: inkwell::types::StructType<'ctx>,
+    pub parent: Option<String>,
+    pub has_vtable: bool,
 }
 
 pub struct CodeGen<'ctx> {
@@ -112,8 +114,8 @@ impl<'ctx> CodeGen<'ctx> {
                 self.function = None;
                 Ok(None)
             }
-            Stmt::Class { name, fields, methods, .. } => {
-                class::compile_class(self, name, fields, methods)?;
+            Stmt::Class { name, fields, methods, parent, .. } => {
+                class::compile_class(self, name, fields, methods, parent)?;
                 Ok(None)
             }
             Stmt::Import { .. } | Stmt::Enum { .. } => {
