@@ -126,6 +126,7 @@ version = "0.1.0"
 fn registry_url(name: &str) -> Option<String> {
     let known: &[(&str, &str)] = &[
         ("string", "https://github.com/AzuriteLang/string"),
+        ("math", "https://github.com/AzuriteLang/math"),
     ];
     known.iter().find(|(n, _)| *n == name).map(|(_, u)| u.to_string())
 }

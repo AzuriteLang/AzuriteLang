@@ -19,7 +19,7 @@ func main() {
 - **Arrays** with heap allocation
 - **Generics** (generic classes)
 - **Package manager** — git dependencies with `azurite.toml`
-- **Standard library** — `string` lib on GitHub
+- **Standard library** — `string` and `math` libs on GitHub
 
 ## Quick Start
 
@@ -57,11 +57,12 @@ cargo run --features llvm -- build hello.az
 ## CLI Commands
 
 | Command | Description |
-|---|---|
+|---|---|---|
 | `azurite check file.az` | Type-check with colored errors |
 | `azurite build file.az` | Compile to `.exe` (requires `llvm` feature) |
 | `azurite repl` | Interactive REPL |
 | `azurite init [dir]` | Create a new project with `azurite.toml` |
+| `azurite install <name>` | Add a dependency from registry or custom (`--git`, `--path`) |
 
 ## Package Manager
 
@@ -94,11 +95,15 @@ local  = { path = "../my-lib" }
 3. **Path deps** → resolved relative to the manifest location
 4. All imported code is inlined recursively before type-checking
 
+### `azurite install`
+
 ```bash
-azurite init my-project
-cd my-project
-azurite check main.az
+azurite install string                  # from built-in registry
+azurite install math --git https://...  # custom git URL
+azurite install mylib --path ./libs     # local path
 ```
+
+The registry currently knows: `string`, `math`.
 
 ## Imports
 
@@ -133,6 +138,24 @@ string = { git = "https://github.com/AzuriteLang/string" }
 | **Parse** | `to_int`, `equals_ignore_case` |
 | **Transform** | `to_upper`, `to_lower`, `reverse`, `trim`, `trim_start`, `trim_end`, `replace`, `substring` |
 | **Check** | `is_upper`, `is_lower`, `is_digit`, `is_letter`, `is_alnum`, `is_whitespace` |
+
+### `math` — [`github.com/AzuriteLang/math`](https://github.com/AzuriteLang/math)
+
+```toml
+[dependencies]
+math = { git = "https://github.com/AzuriteLang/math" }
+```
+
+| Category | Functions |
+|---|---|
+| **Constants** | `pi()` |
+| **Conversion** | `deg_to_rad`, `rad_to_deg` |
+| **Rounding** | `round`, `floor`, `ceil` |
+| **Clamp** | `clamp_int`, `clamp_float`, `min_int`, `max_int`, `min_float`, `max_float` |
+| **Interpolation** | `lerp` |
+| **Sign** | `sign_int` |
+
+Built-in math functions (no import needed): `sqrt`, `abs`, `sin`, `cos`, `tan`, `pow`, `log`, `log10`.
 
 ## Language Syntax
 
@@ -223,10 +246,18 @@ print(a, b, c)     // print any types (varargs)
 len(s)             // string length
 chr(n)             // int ASCII code → 1-char string
 sqrt(x)            // square root
-abs(x)             // absolute value
+abs(x)             // absolute value (int)
 int(f)             // float to int
 float(i)           // int to float
 char_at(s, i)      // char code at position
+sin(x)             // sine (float)
+cos(x)             // cosine (float)
+tan(x)             // tangent (float)
+pow(x, y)          // power (float)
+log(x)             // natural log (float)
+log10(x)           // base-10 log (float)
+floor(x)           // round down (float)
+ceil(x)            // round up (float)
 read()             // read stdin
 input(prompt)      // read with prompt
 exit(code)         // exit program
