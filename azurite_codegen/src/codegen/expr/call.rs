@@ -25,6 +25,10 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                 "char_at" => return compile_char_at(cg, args),
                 "chr" => return compile_chr(cg, args),
                 "str" => return compile_str(cg, args),
+                "getenv" => return compile_getenv(cg, args),
+                "system" => return compile_system(cg, args),
+                "pid" => return compile_pid(cg, args),
+                "cwd" => return compile_cwd(cg, args),
                 "sin" => return compile_math1(cg, "sin", args),
                 "cos" => return compile_math1(cg, "cos", args),
                 "tan" => return compile_math1(cg, "tan", args),
@@ -577,6 +581,92 @@ fn compile_str<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValue
     let fp = cg.builder.build_load(i64_ty, pos_alloca, "fp").unwrap().into_int_value();
     let sp = unsafe { cg.builder.build_gep(i8_ty, buf, &[fp], "sp").unwrap() };
     Ok(sp.into())
+}
+
+fn compile_getenv<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
+    let i64_ty = cg.context.i64_type();
+    let name = cg.compile_expr(&args[0])?;
+    let buf = cg.builder.build_array_alloca(cg.context.i8_type(), i64_ty.const_int(1024, false), "env_buf").unwrap();
+    // getenv on MSVC is actually _dupenv_s or getenv
+    if cg.module.get_function("getenv").is_none() {
+        let ft = ptr_ty.fn_type(&[ptr_ty.into()], false);
+        cg.module.add_function("getenv", ft, None);
+    }
+    let result = cg.builder.build_call(
+        cg.module.get_function("getenv").unwrap(),
+        &[name.into()], "getenv_call"
+    ).unwrap().try_as_basic_value().unwrap_basic().into_pointer_value();
+    // Check if null (not found)
+    let is_null = cg.builder.build_is_null(result, "env_null").unwrap();
+    let cf = cg.function.unwrap();
+    let found_bb = cg.context.append_basic_block(cf, "env_found");
+    let not_found_bb = cg.context.append_basic_block(cf, "env_not_found");
+    let merge_bb = cg.context.append_basic_block(cf, "env_merge");
+    cg.builder.build_conditional_branch(is_null, not_found_bb, found_bb).unwrap();
+    cg.builder.position_at_end(found_bb);
+    // strcpy(buf, result)
+    if cg.module.get_function("strcpy").is_none() {
+        let strcpy_ty = ptr_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], false);
+        cg.module.add_function("strcpy", strcpy_ty, None);
+    }
+    cg.builder.build_call(cg.module.get_function("strcpy").unwrap(), &[buf.into(), result.into()], "env_cpy").unwrap();
+    cg.builder.build_unconditional_branch(merge_bb).unwrap();
+    cg.builder.position_at_end(not_found_bb);
+    cg.builder.build_store(buf, cg.context.i8_type().const_zero()).unwrap();
+    cg.builder.build_unconditional_branch(merge_bb).unwrap();
+    cg.builder.position_at_end(merge_bb);
+    Ok(buf.into())
+}
+
+fn compile_system<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let cmd = cg.compile_expr(&args[0])?;
+    let i64_ty = cg.context.i64_type();
+    if cg.module.get_function("system").is_none() {
+        let ft = i64_ty.fn_type(&[cg.context.ptr_type(inkwell::AddressSpace::default()).into()], false);
+        cg.module.add_function("system", ft, None);
+    }
+    let result = cg.builder.build_call(
+        cg.module.get_function("system").unwrap(),
+        &[cmd.into()], "system_call"
+    ).unwrap().try_as_basic_value().unwrap_basic();
+    Ok(result)
+}
+
+fn compile_pid<'ctx>(cg: &mut CodeGen<'ctx>, _args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let i64_ty = cg.context.i64_type();
+    // On Windows: _getpid(), on Unix: getpid()
+    for name in &["_getpid" as &str, "getpid"] {
+        if cg.module.get_function(name).is_none() {
+            let ft = i64_ty.fn_type(&[], false);
+            cg.module.add_function(name, ft, None);
+        }
+    }
+    let pname = if cg.module.get_function("_getpid").is_some() { "_getpid" } else { "getpid" };
+    let result = cg.builder.build_call(
+        cg.module.get_function(pname).unwrap(),
+        &[], "pid_call"
+    ).unwrap().try_as_basic_value().unwrap_basic();
+    Ok(result)
+}
+
+fn compile_cwd<'ctx>(cg: &mut CodeGen<'ctx>, _args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
+    let i64_ty = cg.context.i64_type();
+    let buf = cg.builder.build_array_alloca(cg.context.i8_type(), i64_ty.const_int(1024, false), "cwd_buf").unwrap();
+    // On Windows: _getcwd(), on Unix: getcwd()
+    for name in &["_getcwd" as &str, "getcwd"] {
+        if cg.module.get_function(name).is_none() {
+            let ft = ptr_ty.fn_type(&[ptr_ty.into(), i64_ty.into()], false);
+            cg.module.add_function(name, ft, None);
+        }
+    }
+    let cname = if cg.module.get_function("_getcwd").is_some() { "_getcwd" } else { "getcwd" };
+    cg.builder.build_call(
+        cg.module.get_function(cname).unwrap(),
+        &[buf.into(), i64_ty.const_int(1024, false).into()], "cwd_call"
+    ).unwrap();
+    Ok(buf.into())
 }
 
 fn compile_math1<'ctx>(cg: &mut CodeGen<'ctx>, name: &str, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
