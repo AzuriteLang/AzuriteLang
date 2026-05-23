@@ -325,4 +325,4 @@ azurite_test/       # 330+ integration tests
 
 ## License
 
-MIT
+GNU General Public License v3.0
