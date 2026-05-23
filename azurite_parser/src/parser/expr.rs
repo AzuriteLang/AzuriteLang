@@ -76,6 +76,21 @@ pub fn parse_expr(p: &mut Parser, min_bp: u8) -> Result<Expr, AzError> {
                 if l_bp < min_bp { break; }
                 p.advance();
                 let rhs = parse_expr(p, r_bp)?;
+                // Check for chained comparisons: a < b < c → (a < b) && (b < c)
+                if parser::is_comparison(op) {
+                    if let Some(next_kind) = p.peek_kind() {
+                        if let Some(next_op) = parser::token_to_binop(next_kind) {
+                            if parser::is_comparison(next_op) {
+                                let mid = rhs.clone();
+                                p.advance();
+                                let rhs2 = parse_expr(p, r_bp)?;
+                                let second = Expr::Binary { left: Box::new(mid), op: next_op, right: Box::new(rhs2) };
+                                lhs = Expr::Binary { left: Box::new(Expr::Binary { left: Box::new(lhs), op, right: Box::new(rhs) }), op: BinOp::And, right: Box::new(second) };
+                                continue;
+                            }
+                        }
+                    }
+                }
                 lhs = Expr::Binary { left: Box::new(lhs), op, right: Box::new(rhs) };
             }
             _ => break,

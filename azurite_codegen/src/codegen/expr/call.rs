@@ -49,9 +49,21 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                 "srand" => return compile_srand(cg, args),
                 _ => {}
             }
-            let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
-            let meta: Vec<BasicMetadataValueEnum> = compiled.iter().map(|a| (*a).into()).collect();
+            let mut compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
             if let Some(f) = cg.module.get_function(&callee_name) {
+                let total = f.count_params() as usize;
+                if compiled.len() < total {
+                    let dv = cg.function_defaults.get(&callee_name).cloned().unwrap_or_default();
+                    for i in compiled.len()..total.min(dv.len()) {
+                        if let Some(ref dv_expr) = dv[i] {
+                            compiled.push(cg.compile_expr(dv_expr)?);
+                        } else { break; }
+                    }
+                    while compiled.len() < total {
+                        compiled.push(cg.context.i64_type().const_zero().into());
+                    }
+                }
+                let meta: Vec<BasicMetadataValueEnum> = compiled.iter().map(|a| (*a).into()).collect();
                 let result = cg.builder.build_call(f, &meta, "calltmp").unwrap();
                 Ok(match result.try_as_basic_value() {
                     inkwell::values::ValueKind::Basic(bv) => bv,
@@ -91,6 +103,7 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                                     name: f.name.clone(),
                                     type_annotation: Some(subst_type_multi(&f.type_, &tp, &concrete_types)),
                                     vararg: false,
+                                    default_value: None,
                                 }).collect();
                                 m.push(Stmt::Func {
                                     name: Ident { name: "new".to_string(), span: Span::new(0, 0, 1, 1) },
@@ -122,7 +135,21 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                             }
                             let fn_name2 = format!("{}_{}", concrete_name, method);
                             if let Some(f) = cg.module.get_function(&fn_name2) {
-                                let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
+                                let mut compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
+                                let total = f.count_params() as usize;
+                                if compiled.len() < total {
+                                    let dv = cg.function_defaults.get(&fn_name2).cloned().unwrap_or_default();
+                                    for i in compiled.len()..total.min(dv.len()) {
+                                        if let Some(ref dv_expr) = dv[i] {
+                                            compiled.push(cg.compile_expr(dv_expr)?);
+                                        } else {
+                                            compiled.push(cg.context.i64_type().const_zero().into());
+                                        }
+                                    }
+                                    while compiled.len() < total {
+                                        compiled.push(cg.context.i64_type().const_zero().into());
+                                    }
+                                }
                                 let meta: Vec<BasicMetadataValueEnum> = compiled.iter().map(|a| (*a).into()).collect();
                                 let result = cg.builder.build_call(f, &meta, "calltmp").unwrap();
                                 return Ok(match result.try_as_basic_value() {
@@ -133,7 +160,21 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                         }
                     }
                     if let Some(f) = cg.module.get_function(&fn_name) {
-                        let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
+                        let mut compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
+                        let total = f.count_params() as usize;
+                        if compiled.len() < total {
+                            let dv = cg.function_defaults.get(&fn_name).cloned().unwrap_or_default();
+                            for i in compiled.len()..total.min(dv.len()) {
+                                if let Some(ref dv_expr) = dv[i] {
+                                    compiled.push(cg.compile_expr(dv_expr)?);
+                                } else {
+                                    compiled.push(cg.context.i64_type().const_zero().into());
+                                }
+                            }
+                            while compiled.len() < total {
+                                compiled.push(cg.context.i64_type().const_zero().into());
+                            }
+                        }
                         let meta: Vec<BasicMetadataValueEnum> = compiled.iter().map(|a| (*a).into()).collect();
                         let result = cg.builder.build_call(f, &meta, "calltmp").unwrap();
                         return Ok(match result.try_as_basic_value() {
@@ -151,7 +192,21 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                         if let Some(ref parent) = info.parent {
                             let fn_name = format!("{}_{}", parent, method);
                             if let Some(f) = cg.module.get_function(&fn_name) {
-                                let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
+                                let mut compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
+                                let total = f.count_params() as usize;
+                                if 1 + compiled.len() < total {
+                                    let dv = cg.function_defaults.get(&fn_name).cloned().unwrap_or_default();
+                                    for i in (1 + compiled.len())..total.min(dv.len()) {
+                                        if let Some(ref dv_expr) = dv[i] {
+                                            compiled.push(cg.compile_expr(dv_expr)?);
+                                        } else {
+                                            compiled.push(cg.context.i64_type().const_zero().into());
+                                        }
+                                    }
+                                    while 1 + compiled.len() < total {
+                                        compiled.push(cg.context.i64_type().const_zero().into());
+                                    }
+                                }
                                 let mut meta: Vec<BasicMetadataValueEnum> = vec![cg.builder.build_load(cg.context.ptr_type(inkwell::AddressSpace::default()), cg.self_ptr.unwrap(), "self").unwrap().into()];
                                 for a in &compiled { meta.push((*a).into()); }
                                 let result = cg.builder.build_call(f, &meta, "calltmp").unwrap();
@@ -167,7 +222,7 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
             }
 
             let obj_val = cg.compile_expr(obj)?;
-            let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
+            let mut compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
 
             // Walk parent chain to find the most derived class with this method
             let mut best_class: Option<(String, &crate::codegen::ClassInfo)> = None;
@@ -191,6 +246,20 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
             if let Some((class_name, _info)) = best_class {
                 let fn_name = format!("{}_{}", class_name, method);
                 if let Some(f) = cg.module.get_function(&fn_name) {
+                    let total = f.count_params() as usize;
+                    if 1 + compiled.len() < total {
+                        let dv = cg.function_defaults.get(&fn_name).cloned().unwrap_or_default();
+                        for i in (1 + compiled.len())..total.min(dv.len()) {
+                            if let Some(ref dv_expr) = dv[i] {
+                                compiled.push(cg.compile_expr(dv_expr)?);
+                            } else {
+                                compiled.push(cg.context.i64_type().const_zero().into());
+                            }
+                        }
+                        while 1 + compiled.len() < total {
+                            compiled.push(cg.context.i64_type().const_zero().into());
+                        }
+                    }
                     let mut meta: Vec<BasicMetadataValueEnum> = vec![obj_val.into()];
                     for a in &compiled { meta.push((*a).into()); }
                     let result = cg.builder.build_call(f, &meta, "calltmp").unwrap();

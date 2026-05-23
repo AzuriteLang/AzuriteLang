@@ -1,4 +1,4 @@
-use crate::ast::Ident;
+use crate::ast::{Expr, Ident};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
@@ -14,6 +14,7 @@ pub struct Param {
     pub name: Ident,
     pub type_annotation: Option<Type>,
     pub vararg: bool,
+    pub default_value: Option<Box<Expr>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

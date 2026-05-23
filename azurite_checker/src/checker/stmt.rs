@@ -53,6 +53,7 @@ pub fn check_stmt(c: &mut Checker, stmt: &Stmt) -> Option<Type> {
                     let fn_name_clone = fn_name.clone();
                     c.scope.insert(&fn_name, Symbol { name: fn_name_clone, kind: SymbolKind::Function, type_: func_type })
                         .unwrap_or_else(|e| c.error(name.span, e));
+                    c.fn_defaults.insert(fn_name, mparams.iter().map(|p| p.default_value.clone()).collect());
                 }
             }
             // Also register fields as a scope entry so field access can work
@@ -78,6 +79,7 @@ pub fn check_stmt(c: &mut Checker, stmt: &Stmt) -> Option<Type> {
             };
             c.scope.insert(&name.name, Symbol { name: name.name.clone(), kind: SymbolKind::Function, type_: func_type })
                 .unwrap_or_else(|e| c.error(name.span, e));
+            c.fn_defaults.insert(name.name.clone(), params.iter().map(|p| p.default_value.clone()).collect());
             None
         }
         Stmt::Return { value } => {

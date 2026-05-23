@@ -37,6 +37,7 @@ pub struct CodeGen<'ctx> {
     pub printf: Option<FunctionValue<'ctx>>,
     pub putchar: Option<FunctionValue<'ctx>>,
     pub loop_stack: Vec<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
+    pub function_defaults: HashMap<String, Vec<Option<Box<Expr>>>>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -57,6 +58,7 @@ impl<'ctx> CodeGen<'ctx> {
             printf: None,
             putchar: None,
             loop_stack: Vec::new(),
+            function_defaults: HashMap::new(),
         }
     }
 
@@ -156,6 +158,7 @@ impl<'ctx> CodeGen<'ctx> {
                     }
                 }
 
+                self.function_defaults.insert(name.name.clone(), params.iter().map(|p| p.default_value.clone()).collect());
                 self.function = None;
                 Ok(None)
             }

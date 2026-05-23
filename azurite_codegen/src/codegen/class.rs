@@ -95,6 +95,7 @@ fn compile_method<'ctx>(
 
         let loaded: BasicValueEnum = instance.into();
         cg.builder.build_return(Some(&loaded)).unwrap();
+        cg.function_defaults.insert(fn_name, params.iter().map(|p| p.default_value.clone()).collect());
         cg.function = None;
         cg.current_class = None;
         return Ok(());
@@ -158,6 +159,7 @@ fn compile_method<'ctx>(
         else { cg.builder.build_return(Some(&cg.context.i64_type().const_zero())).unwrap(); }
     }
 
+    cg.function_defaults.insert(fn_name, params.iter().map(|p| p.default_value.clone()).collect());
     cg.function = None;
     cg.self_ptr = None;
     cg.current_class = None;

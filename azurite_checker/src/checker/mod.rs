@@ -16,6 +16,7 @@ pub struct Checker {
     pub generic_classes: HashMap<String, (Vec<String>, Vec<ClassField>, Vec<Stmt>)>,
     pub concrete_classes: HashMap<String, Vec<ClassField>>,
     pub enums: HashMap<String, Vec<EnumVariant>>,
+    pub fn_defaults: HashMap<String, Vec<Option<Box<Expr>>>>,
 }
 
 impl Checker {
@@ -29,6 +30,7 @@ impl Checker {
             generic_classes: HashMap::new(),
             concrete_classes: HashMap::new(),
             enums: HashMap::new(),
+            fn_defaults: HashMap::new(),
         };
         checker.register_builtins();
         checker
@@ -172,6 +174,7 @@ impl Checker {
                 let func_type = Type::Func { params: resolved_params, ret: Box::new(resolved_ret) };
                 let fn_name_clone = fn_name.clone();
                 self.scope.insert(&fn_name, Symbol { name: fn_name_clone, kind: SymbolKind::Function, type_: func_type }).ok();
+                self.fn_defaults.insert(fn_name, mparams.iter().map(|p| p.default_value.clone()).collect());
             }
         }
         Some(Type::Instance { name: concrete_name })

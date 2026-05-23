@@ -123,6 +123,10 @@ pub fn is_binop(kind: &TokenKind) -> bool {
     )
 }
 
+pub fn is_comparison(op: BinOp) -> bool {
+    matches!(op, BinOp::Eq | BinOp::Neq | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge)
+}
+
 pub fn token_to_binop(kind: TokenKind) -> Option<BinOp> {
     match kind {
         TokenKind::Plus => Some(BinOp::Add),

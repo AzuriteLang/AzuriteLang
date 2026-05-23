@@ -109,7 +109,11 @@ fn parse_params(p: &mut Parser) -> Result<Vec<Param>, AzError> {
                     p.advance();
                     Some(super::type_::parse_type(p)?)
                 } else { None };
-                params.push(Param { name, type_annotation, vararg });
+                let default_value = if p.peek_kind() == Some(TokenKind::Assign) {
+                    p.advance();
+                    Some(Box::new(expr::parse_expr(p, 0)?))
+                } else { None };
+                params.push(Param { name, type_annotation, vararg, default_value });
             }
         }
     }

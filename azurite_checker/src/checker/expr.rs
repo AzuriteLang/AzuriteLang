@@ -31,8 +31,12 @@ fn resolve_instance_method(c: &mut Checker, instance: &Type, method: &str, args:
             let sym_info = c.scope.lookup(&fn_name).map(|s| s.type_.clone());
             match sym_info {
                 Some(Type::Func { params, ret }) => {
-                    if !params.is_empty() && params.len() > args.len() {
-                        c.error(span, format!("expected at least {} args, got {}", params.len(), args.len()));
+                    let defaults = c.fn_defaults.get(&fn_name);
+                    let required = params.iter().enumerate().filter(|(i, _)| {
+                        defaults.map_or(true, |d| d.get(*i).map_or(true, |dv| dv.is_none()))
+                    }).count();
+                    if params.len() > args.len() && args.len() < required {
+                        c.error(span, format!("expected at least {} args, got {}", required, args.len()));
                     }
                     for (i, arg) in args.iter().enumerate() {
                         let arg_type = super::expr::check_expr(c, arg);
@@ -217,8 +221,16 @@ pub fn check_expr(c: &mut Checker, expr: &Expr) -> Option<Type> {
             let callee_type = check_expr(c, callee);
             match callee_type {
                 Some(Type::Func { params, ret }) => {
-                    if !params.is_empty() && params.len() > args.len() {
-                        c.error(span, format!("expected at least {} args, got {}", params.len(), args.len()));
+                    let callee_name = match callee.as_ref() {
+                        Expr::Ident(i) => Some(&i.name),
+                        _ => None,
+                    };
+                    let defaults = callee_name.and_then(|n| c.fn_defaults.get(n));
+                    let required = params.iter().enumerate().filter(|(i, _)| {
+                        defaults.map_or(true, |d| d.get(*i).map_or(true, |dv| dv.is_none()))
+                    }).count();
+                    if params.len() > args.len() && args.len() < required {
+                        c.error(span, format!("expected at least {} args, got {}", required, args.len()));
                     }
                     for (i, arg) in args.iter().enumerate() {
                         let arg_type = check_expr(c, arg);
