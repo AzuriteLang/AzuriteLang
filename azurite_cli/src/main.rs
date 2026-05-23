@@ -17,13 +17,9 @@ use inkwell::context::Context;
 #[derive(ClapParser)]
 #[command(name = "azurite", about = "AzuriteLang compiler")]
 enum Cli {
-    #[command(about = "Tokenize source and print tokens")]
-    Tokenize { file: PathBuf },
-    #[command(about = "Parse source and print AST")]
-    Parse { file: PathBuf },
     #[command(about = "Type-check source and report errors")]
     Check { file: PathBuf },
-    #[command(about = "Compile source to LLVM IR")]
+    #[command(about = "Compile source to executable")]
     Build {
         file: PathBuf,
         #[arg(short, long, help = "Output file path")]
@@ -37,8 +33,6 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match &cli {
-        Cli::Tokenize { file } => cmd_tokenize(file),
-        Cli::Parse { file } => cmd_parse(file),
         Cli::Check { file } => cmd_check(file),
         Cli::Build { file, output } => cmd_build(file, output.as_ref()),
         Cli::Repl => cmd_repl(),
@@ -111,33 +105,6 @@ fn resolve_main(file: &Path) -> Result<(Program, String), String> {
     let source = read_file(&file.to_path_buf())?;
     let program = resolve_module(&source, file)?;
     Ok((program, source))
-}
-
-fn cmd_tokenize(file: &PathBuf) -> Result<(), String> {
-    let source = read_file(file)?;
-    match Lexer::new(&source).tokenize() {
-        Ok(tokens) => {
-            for token in &tokens {
-                println!("{:?}", token);
-            }
-            Ok(())
-        }
-        Err(msg) => {
-            let err = azurite_errors::AzError::new(
-                azurite_errors::ErrorKind::Lex,
-                azurite_lexer::Span::new(0, 0, 1, 1),
-                msg,
-            );
-            Diagnostic::print(&source, &file.to_string_lossy(), &err);
-            Err("tokenization failed".to_string())
-        }
-    }
-}
-
-fn cmd_parse(file: &PathBuf) -> Result<(), String> {
-    let (program, _source) = resolve_main(file)?;
-    println!("{:#?}", program);
-    Ok(())
 }
 
 fn cmd_check(file: &PathBuf) -> Result<(), String> {

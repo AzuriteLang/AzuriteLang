@@ -32,18 +32,15 @@ impl Diagnostic {
             eprintln!("{} {}|{} {}", CYAN, line_num, RESET, line);
 
             let mut caret = String::new();
-            // indent to column
             for _ in 0..col {
                 caret.push(' ');
             }
             let span_len = std::cmp::max(error.span.end - error.span.start, 1);
-            for idx in 0..span_len {
-                if idx == 0 {
-                    caret.push_str(&format!("{}^", RED));
-                } else {
-                    caret.push_str(&format!("{}~", RED));
-                }
+            caret.push_str(&format!("{}^", RED));
+            for _ in 1..span_len {
+                caret.push_str(&format!("{}~", RED));
             }
+            caret.push_str(RESET);
             eprintln!("  {} |{} {}", CYAN, RESET, caret);
 
             if let Some(ref help) = error.help {

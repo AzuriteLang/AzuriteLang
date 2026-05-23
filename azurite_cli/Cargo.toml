@@ -4,9 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "azurite_cli"
+name = "azurite"
 path = "src/main.rs"
-test = false
 
 [dependencies]
 azurite_lexer = { path = "../azurite_lexer" }
