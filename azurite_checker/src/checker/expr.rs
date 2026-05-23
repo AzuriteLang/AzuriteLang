@@ -166,6 +166,16 @@ pub fn check_expr(c: &mut Checker, expr: &Expr) -> Option<Type> {
                 None => None,
             }
         }
+        Expr::Slice { obj, start, end } => {
+            check_expr(c, start);
+            check_expr(c, end);
+            let obj_type = check_expr(c, obj);
+            match obj_type {
+                Some(Type::String) | Some(Type::Array(_)) => obj_type,
+                Some(other) => { c.error(expr.span(), format!("cannot slice '{}'", other)); None }
+                None => None,
+            }
+        }
         Expr::Match { value, arms } => {
             let val_type = check_expr(c, value);
             // Check match exhaustiveness for enum types

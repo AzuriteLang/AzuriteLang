@@ -238,3 +238,67 @@ fn test_decrement_pre() {
 fn test_increment_decrement_chain() {
     assert!(check("func main() { let x = 10 ++x --x print(x) }").is_ok());
 }
+
+// ===== Ternary operator =====
+
+#[test]
+fn test_ternary_basic() {
+    assert!(check("func main() { let x = 1 let y = x == 1 ? 42 : 0 }").is_ok());
+}
+
+#[test]
+fn test_ternary_expression() {
+    assert!(check("func main() { let x = 1 print(x == 1 ? \"yes\" : \"no\") }").is_ok());
+}
+
+#[test]
+fn test_ternary_nested() {
+    assert!(check("func main() { let x = 2 let y = x == 1 ? 10 : x == 2 ? 20 : 30 }").is_ok());
+}
+
+// ===== Switch keyword =====
+
+#[test]
+fn test_switch_basic() {
+    assert!(check("func main() { let x = 1 switch x { 1 => {} 2 => {} _ => {} } }").is_ok());
+}
+
+#[test]
+fn test_switch_expression() {
+    assert!(check("func main() { let x = 1 let y = switch x { 1 => 10 _ => 0 } }").is_ok());
+}
+
+#[test]
+fn test_switch_lexer() {
+    let tokens = azurite_lexer::Lexer::new("switch").tokenize().unwrap();
+    assert_eq!(tokens[0].kind.to_string(), "switch");
+}
+
+// ===== Slice operator =====
+
+#[test]
+fn test_slice_basic() {
+    assert!(check("func main() { let arr = [1, 2, 3, 4, 5] let s = arr[1:4] }").is_ok());
+}
+
+#[test]
+fn test_slice_start_zero() {
+    assert!(check("func main() { let arr = [1, 2, 3] let s = arr[0:2] }").is_ok());
+}
+
+#[test]
+fn test_slice_full() {
+    assert!(check("func main() { let arr = [1, 2, 3] let s = arr[0:3] }").is_ok());
+}
+
+#[test]
+fn test_index_still_works() {
+    assert!(check("func main() { let arr = [1, 2, 3] let x = arr[1] }").is_ok());
+}
+
+// ===== Ternary with slice =====
+
+#[test]
+fn test_ternary_and_slice() {
+    assert!(check("func main() { let arr = [1, 2, 3, 4, 5] let x = 1 let s = x == 1 ? arr[0:2] : arr[2:4] }").is_ok());
+}

@@ -15,6 +15,7 @@ pub fn compile_control<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<Basi
         }
         Expr::Array(elems) => compile_array(cg, elems),
         Expr::Index { obj, index } => compile_index(cg, obj, index),
+        Expr::Slice { obj, start, end } => compile_slice(cg, obj, start, end),
         Expr::Range { start, end } => { let _ = cg.compile_expr(start)?; cg.compile_expr(end) }
         Expr::EnumVariant { variant, .. } => {
             let tag = variant.as_bytes().iter().fold(0u64, |acc, b| acc.wrapping_add(*b as u64));
@@ -97,18 +98,37 @@ fn compile_if<'ctx>(cg: &mut CodeGen<'ctx>, condition: &Expr, then_branch: &Expr
     let cond = cg.compile_expr(condition)?;
     let cond_int = cg.to_bool(cond);
     let cf = cg.function.unwrap();
+    let i64_ty = cg.context.i64_type();
     let then_bb = cg.context.append_basic_block(cf, "then");
     let else_bb = cg.context.append_basic_block(cf, "else");
     let merge_bb = cg.context.append_basic_block(cf, "ifcont");
+
+    // Alloca for the result (all branches store to it)
+    let res = cg.create_entry_alloca(i64_ty.into(), "if_res");
+
     cg.builder.build_conditional_branch(cond_int, then_bb, else_bb).unwrap();
     cg.builder.position_at_end(then_bb);
-    cg.compile_block_stmts(then_branch, false)?;
-    if !cg.has_terminator() { cg.builder.build_unconditional_branch(merge_bb).unwrap(); }
+    let then_val = cg.compile_block_stmts(then_branch, true)?;
+    if !cg.has_terminator() {
+        if let Some(v) = then_val { cg.builder.build_store(res, v).unwrap(); }
+        cg.builder.build_unconditional_branch(merge_bb).unwrap();
+    }
     cg.builder.position_at_end(else_bb);
-    if let Some(el) = else_branch { cg.compile_block_stmts(el, false)?; }
-    if !cg.has_terminator() { cg.builder.build_unconditional_branch(merge_bb).unwrap(); }
+    if let Some(el) = else_branch {
+        let else_val = cg.compile_block_stmts(el, true)?;
+        if !cg.has_terminator() {
+            if let Some(v) = else_val { cg.builder.build_store(res, v).unwrap(); }
+            cg.builder.build_unconditional_branch(merge_bb).unwrap();
+        }
+    } else {
+        if !cg.has_terminator() {
+            cg.builder.build_store(res, i64_ty.const_zero()).unwrap();
+            cg.builder.build_unconditional_branch(merge_bb).unwrap();
+        }
+    }
     cg.builder.position_at_end(merge_bb);
-    Ok(cg.context.i64_type().const_zero().into())
+    let result = cg.builder.build_load(i64_ty, res, "if_load").unwrap();
+    Ok(result)
 }
 
 fn compile_while<'ctx>(cg: &mut CodeGen<'ctx>, condition: &Expr, body: &Expr) -> Result<BasicValueEnum<'ctx>, AzError> {
@@ -180,4 +200,42 @@ fn compile_index<'ctx>(cg: &mut CodeGen<'ctx>, obj: &Expr, index: &Expr) -> Resu
     let idx_int = idx_val.into_int_value();
     let elem = unsafe { cg.builder.build_gep(cg.context.i64_type(), ptr, &[idx_int], "elem").unwrap() };
     Ok(cg.builder.build_load(cg.context.i64_type(), elem, "loaded").unwrap())
+}
+
+fn compile_slice<'ctx>(cg: &mut CodeGen<'ctx>, obj: &Expr, start: &Expr, end: &Expr) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let obj_val = cg.compile_expr(obj)?;
+    let start_val = cg.compile_expr(start)?.into_int_value();
+    let end_val = cg.compile_expr(end)?.into_int_value();
+    let i64_ty = cg.context.i64_type();
+    let i64_ty = cg.context.i64_type();
+    let i8_ty = cg.context.i8_type();
+    let cf = cg.function.unwrap();
+    let len = cg.builder.build_int_sub(end_val, start_val, "slicelen").unwrap();
+    let new_ptr = cg.builder.build_array_malloc(i64_ty, len, "slice").unwrap();
+
+    // Copy elements from obj + start to new_ptr
+    let cf = cg.function.unwrap();
+    let cond_bb = cg.context.append_basic_block(cf, "slice_cond");
+    let body_bb = cg.context.append_basic_block(cf, "slice_body");
+    let after_bb = cg.context.append_basic_block(cf, "slice_after");
+    let i_ptr = cg.create_entry_alloca(i64_ty.into(), "__si");
+    cg.builder.build_store(i_ptr, i64_ty.const_zero()).unwrap();
+
+    cg.builder.build_unconditional_branch(cond_bb).unwrap();
+    cg.builder.position_at_end(cond_bb);
+    let i = cg.builder.build_load(i64_ty, i_ptr, "__si").unwrap().into_int_value();
+    let cmp = cg.builder.build_int_compare(inkwell::IntPredicate::SLT, i, len, "scmp").unwrap();
+    cg.builder.build_conditional_branch(cmp, body_bb, after_bb).unwrap();
+    cg.builder.position_at_end(body_bb);
+    let src_idx = cg.builder.build_int_add(i, start_val, "srcidx").unwrap();
+    let src_gep = unsafe { cg.builder.build_gep(i64_ty, obj_val.into_pointer_value(), &[src_idx], "srcelem").unwrap() };
+    let src_val = cg.builder.build_load(i64_ty, src_gep, "loaded").unwrap();
+    let dst_gep = unsafe { cg.builder.build_gep(i64_ty, new_ptr, &[i], "dstelem").unwrap() };
+    cg.builder.build_store(dst_gep, src_val).unwrap();
+    let i_next = cg.builder.build_int_add(i, i64_ty.const_int(1, false), "inc").unwrap();
+    cg.builder.build_store(i_ptr, i_next).unwrap();
+    cg.builder.build_unconditional_branch(cond_bb).unwrap();
+    cg.builder.position_at_end(after_bb);
+
+    Ok(new_ptr.into())
 }

@@ -57,6 +57,7 @@ pub enum TokenKind {
     Try,
     Catch,
     Throw,
+    Switch,
 
     // Literals
     Int(i64),
@@ -153,6 +154,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Try => write!(f, "try"),
             TokenKind::Catch => write!(f, "catch"),
             TokenKind::Throw => write!(f, "throw"),
+            TokenKind::Switch => write!(f, "switch"),
             TokenKind::Int(n) => write!(f, "{}", n),
             TokenKind::Float(n) => write!(f, "{}", n),
             TokenKind::String(s) => write!(f, "\"{}\"", s),

@@ -388,6 +388,7 @@ impl Lexer {
             "try" => TokenKind::Try,
             "catch" => TokenKind::Catch,
             "throw" => TokenKind::Throw,
+            "switch" => TokenKind::Switch,
             _ => TokenKind::Ident(ident.into()),
         };
         Ok(Token::new(kind, span))

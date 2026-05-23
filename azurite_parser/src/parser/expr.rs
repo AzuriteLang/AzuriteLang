@@ -24,7 +24,7 @@ pub fn parse_expr(p: &mut Parser, min_bp: u8) -> Result<Expr, AzError> {
         Some(TokenKind::LBracket) => parse_array(p)?,
         Some(TokenKind::If) => parse_if(p)?,
         Some(TokenKind::While) => parse_while(p)?,
-        Some(TokenKind::Match) => parse_match(p)?,
+        Some(TokenKind::Match) | Some(TokenKind::Switch) => parse_match(p)?,
         Some(TokenKind::Minus) | Some(TokenKind::Not) => {
             let op = match p.peek_kind() { Some(TokenKind::Minus) => UnOp::Neg, _ => UnOp::Not };
             p.advance();
@@ -58,9 +58,16 @@ pub fn parse_expr(p: &mut Parser, min_bp: u8) -> Result<Expr, AzError> {
             }
             Some(TokenKind::LBracket) => {
                 p.advance();
-                let index = parse_expr(p, 0)?;
-                p.expect(TokenKind::RBracket, "']'")?;
-                lhs = Expr::Index { obj: Box::new(lhs), index: Box::new(index) };
+                let inner = parse_expr(p, 0)?;
+                if p.peek_kind() == Some(TokenKind::Colon) {
+                    p.advance();
+                    let end = parse_expr(p, 0)?;
+                    p.expect(TokenKind::RBracket, "']'")?;
+                    lhs = Expr::Slice { obj: Box::new(lhs), start: Box::new(inner), end: Box::new(end) };
+                } else {
+                    p.expect(TokenKind::RBracket, "']'")?;
+                    lhs = Expr::Index { obj: Box::new(lhs), index: Box::new(inner) };
+                }
             }
             Some(TokenKind::Dot) | Some(TokenKind::QuestionDot) => {
                 let null_safe = p.peek_kind() == Some(TokenKind::QuestionDot);
@@ -82,6 +89,14 @@ pub fn parse_expr(p: &mut Parser, min_bp: u8) -> Result<Expr, AzError> {
                 p.advance();
                 let rhs = parse_expr(p, 9)?;
                 lhs = Expr::Range { start: Box::new(lhs), end: Box::new(rhs) };
+            }
+            Some(TokenKind::Question) => {
+                if 2 < min_bp { break; }
+                p.advance();
+                let then_branch = parse_expr(p, 0)?;
+                p.expect(TokenKind::Colon, "expected ':' in ternary expression")?;
+                let else_branch = parse_expr(p, 2)?;
+                lhs = Expr::If { condition: Box::new(lhs), then_branch: Box::new(then_branch), else_branch: Some(Box::new(else_branch)) };
             }
             Some(op_kind) if parser::is_binop(&op_kind) => {
                 let op = parser::token_to_binop(op_kind.clone()).unwrap();

@@ -65,6 +65,11 @@ pub enum Expr {
         obj: Box<Expr>,
         index: Box<Expr>,
     },
+    Slice {
+        obj: Box<Expr>,
+        start: Box<Expr>,
+        end: Box<Expr>,
+    },
     Match {
         value: Box<Expr>,
         arms: Vec<MatchArm>,
@@ -96,6 +101,7 @@ impl Expr {
             Expr::MethodCall { obj, .. } => obj.span(),
             Expr::FieldAccess { obj, .. } => obj.span(),
             Expr::Index { obj, .. } => obj.span(),
+            Expr::Slice { obj, .. } => obj.span(),
             Expr::Block(stmts) => stmts.first().map(|s| s.span()).unwrap_or(azurite_lexer::Span::new(0, 0, 0, 0)),
             Expr::If { condition, .. } => condition.span(),
             Expr::While { condition, .. } => condition.span(),
