@@ -1,0 +1,45 @@
+name: Build Installer
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM
+        run: |
+          choco install llvm --version=22.1.0 -y
+          echo "LLVM_DIR=C:\Program Files\LLVM" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        shell: pwsh
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+        shell: pwsh
+
+      - name: Build release
+        run: cargo build --release --features llvm
+        shell: pwsh
+
+      - name: Copy LLVM DLLs
+        run: |
+          Copy-Item "$env:LLVM_DIR\bin\LLVM-C.dll" target\release\
+          Copy-Item "$env:LLVM_DIR\bin\clang.exe" target\release\
+          Copy-Item "$env:LLVM_DIR\bin\lld.exe" target\release\
+        shell: pwsh
+        continue-on-error: true
+
+      - name: Compile installer
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\setup.iss
+        shell: pwsh
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: AzuriteLang-installer
+          path: installer\output\*.exe
