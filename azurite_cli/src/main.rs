@@ -270,7 +270,15 @@ fn cmd_check(file: &PathBuf) -> Result<(), String> {
 }
 
 fn cmd_build(file: &PathBuf, output: Option<&PathBuf>, keep_ll: bool) -> Result<(), String> {
-    let (program, _source) = resolve_main(file)?;
+    let (program, source) = resolve_main(file)?;
+
+    let mut checker = Checker::new();
+    if let Err(errors) = checker.check_program(&program) {
+        for err in &errors {
+            Diagnostic::print(&source, &file.to_string_lossy(), err);
+        }
+        return Err(format!("{} type error(s) found", errors.len()));
+    }
 
     #[cfg(feature = "llvm")]
     {

@@ -56,3 +56,22 @@ pub enum Stmt {
     },
     Expr(Expr),
 }
+
+impl Stmt {
+    pub fn span(&self) -> azurite_lexer::Span {
+        match self {
+            Stmt::Let { name, .. } => name.span,
+            Stmt::Func { name, .. } => name.span,
+            Stmt::Class { name, .. } => name.span,
+            Stmt::Enum { name, .. } => name.span,
+            Stmt::Return { value } => value.as_ref().map(|v| v.span()).unwrap_or(azurite_lexer::Span::new(0, 0, 0, 0)),
+            Stmt::Break => azurite_lexer::Span::new(0, 0, 0, 0),
+            Stmt::Continue => azurite_lexer::Span::new(0, 0, 0, 0),
+            Stmt::Import { span, .. } => *span,
+            Stmt::If { condition, .. } => condition.span(),
+            Stmt::While { condition, .. } => condition.span(),
+            Stmt::For { name, .. } => name.span,
+            Stmt::Expr(e) => e.span(),
+        }
+    }
+}

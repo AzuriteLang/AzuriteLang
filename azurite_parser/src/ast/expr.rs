@@ -82,3 +82,25 @@ pub enum Expr {
         body: Box<Expr>,
     },
 }
+
+impl Expr {
+    pub fn span(&self) -> azurite_lexer::Span {
+        match self {
+            Expr::Ident(i) => i.span,
+            Expr::Binary { left, .. } => left.span(),
+            Expr::Unary { operand, .. } => operand.span(),
+            Expr::Call { callee, .. } => callee.span(),
+            Expr::MethodCall { obj, .. } => obj.span(),
+            Expr::FieldAccess { obj, .. } => obj.span(),
+            Expr::Index { obj, .. } => obj.span(),
+            Expr::Block(stmts) => stmts.first().map(|s| s.span()).unwrap_or(azurite_lexer::Span::new(0, 0, 0, 0)),
+            Expr::If { condition, .. } => condition.span(),
+            Expr::While { condition, .. } => condition.span(),
+            Expr::Match { value, .. } => value.span(),
+            Expr::Range { start, .. } => start.span(),
+            Expr::EnumVariant { args, .. } => args.first().map(|a| a.span()).unwrap_or(azurite_lexer::Span::new(0, 0, 0, 0)),
+            Expr::Array(items) => items.first().map(|a| a.span()).unwrap_or(azurite_lexer::Span::new(0, 0, 0, 0)),
+            _ => azurite_lexer::Span::new(0, 0, 0, 0),
+        }
+    }
+}

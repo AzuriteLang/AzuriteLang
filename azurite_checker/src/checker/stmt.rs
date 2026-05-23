@@ -78,13 +78,14 @@ pub fn check_stmt(c: &mut Checker, stmt: &Stmt) -> Option<Type> {
         }
         Stmt::Return { value } => {
             let val_type = value.as_ref().map(|v| super::expr::check_expr(c, v)).flatten();
+            let span = value.as_ref().map(|v| v.span()).unwrap_or(azurite_lexer::Span::new(0, 0, 0, 0));
             if let Some(ref expected) = c.expected_return {
                 match val_type {
                     Some(ref actual) if *expected != *actual => {
-                        c.error(azurite_lexer::Span::new(0, 0, 0, 0), format!("expected '{}', got '{}'", expected, actual));
+                        c.error(span, format!("expected '{}', got '{}'", expected, actual));
                     }
                     None if *expected != Type::Void => {
-                        c.error(azurite_lexer::Span::new(0, 0, 0, 0), format!("expected return type '{}'", expected));
+                        c.error(span, format!("expected return type '{}'", expected));
                     }
                     _ => {}
                 }
