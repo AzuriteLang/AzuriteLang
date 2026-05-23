@@ -45,6 +45,14 @@ impl Checker {
             ("exit", Type::Func { params: vec![Type::Int], ret: Box::new(Type::Void) }),
             ("char_at", Type::Func { params: vec![Type::String, Type::Int], ret: Box::new(Type::Int) }),
             ("chr", Type::Func { params: vec![Type::Int], ret: Box::new(Type::String) }),
+            ("sin", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
+            ("cos", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
+            ("tan", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
+            ("pow", Type::Func { params: vec![Type::Float, Type::Float], ret: Box::new(Type::Float) }),
+            ("log", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
+            ("log10", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
+            ("floor", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
+            ("ceil", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
         ];
         for (name, type_) in builtins {
             self.scope.insert(name, Symbol {

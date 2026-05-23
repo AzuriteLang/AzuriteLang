@@ -24,6 +24,14 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                 "exit" => return compile_exit(cg, args),
                 "char_at" => return compile_char_at(cg, args),
                 "chr" => return compile_chr(cg, args),
+                "sin" => return compile_math1(cg, "sin", args),
+                "cos" => return compile_math1(cg, "cos", args),
+                "tan" => return compile_math1(cg, "tan", args),
+                "log" => return compile_math1(cg, "log", args),
+                "log10" => return compile_math1(cg, "log10", args),
+                "floor" => return compile_math1(cg, "floor", args),
+                "ceil" => return compile_math1(cg, "ceil", args),
+                "pow" => return compile_math2(cg, "pow", args),
                 _ => {}
             }
             let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
@@ -285,6 +293,34 @@ fn compile_chr<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValue
     };
     cg.builder.build_store(null_gep, cg.context.i8_type().const_zero()).unwrap();
     Ok(buf.into())
+}
+
+fn compile_math1<'ctx>(cg: &mut CodeGen<'ctx>, name: &str, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let val = cg.compile_expr(&args[0])?;
+    let f = val.into_float_value();
+    let f64_ty = cg.context.f64_type();
+    let ft = f64_ty.fn_type(&[f64_ty.into()], false);
+    let func = match cg.module.get_function(name) {
+        Some(f) => f,
+        None => cg.module.add_function(name, ft, None),
+    };
+    let result = cg.builder.build_call(func, &[f.into()], name).unwrap();
+    Ok(match result.try_as_basic_value() { inkwell::values::ValueKind::Basic(bv) => bv, _ => f64_ty.const_float(0.0).into() })
+}
+
+fn compile_math2<'ctx>(cg: &mut CodeGen<'ctx>, name: &str, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let a = cg.compile_expr(&args[0])?;
+    let b = cg.compile_expr(&args[1])?;
+    let fa = a.into_float_value();
+    let fb = b.into_float_value();
+    let f64_ty = cg.context.f64_type();
+    let ft = f64_ty.fn_type(&[f64_ty.into(), f64_ty.into()], false);
+    let func = match cg.module.get_function(name) {
+        Some(f) => f,
+        None => cg.module.add_function(name, ft, None),
+    };
+    let result = cg.builder.build_call(func, &[fa.into(), fb.into()], name).unwrap();
+    Ok(match result.try_as_basic_value() { inkwell::values::ValueKind::Basic(bv) => bv, _ => f64_ty.const_float(0.0).into() })
 }
 
 fn subst_type_multi(ty: &Type, type_params: &[String], concrete_types: &[String]) -> Type {

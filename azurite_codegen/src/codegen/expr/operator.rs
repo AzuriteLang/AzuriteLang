@@ -59,11 +59,25 @@ fn compile_binary<'ctx>(cg: &CodeGen<'ctx>, lhs: BasicValueEnum<'ctx>, rhs: Basi
             Ok(val)
         }
         (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => {
+            let i64_ty = cg.context.i64_type();
             let val = match op {
                 BinOp::Add => cg.builder.build_float_add(l, r, "faddtmp").unwrap().into(),
                 BinOp::Sub => cg.builder.build_float_sub(l, r, "fsubtmp").unwrap().into(),
                 BinOp::Mul => cg.builder.build_float_mul(l, r, "fmultmp").unwrap().into(),
                 BinOp::Div => cg.builder.build_float_div(l, r, "fdivtmp").unwrap().into(),
+                BinOp::Eq | BinOp::Neq | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => {
+                    let pred = match op {
+                        BinOp::Eq => inkwell::FloatPredicate::OEQ,
+                        BinOp::Neq => inkwell::FloatPredicate::ONE,
+                        BinOp::Lt => inkwell::FloatPredicate::OLT,
+                        BinOp::Gt => inkwell::FloatPredicate::OGT,
+                        BinOp::Le => inkwell::FloatPredicate::OLE,
+                        BinOp::Ge => inkwell::FloatPredicate::OGE,
+                        _ => unreachable!(),
+                    };
+                    let cmp = cg.builder.build_float_compare(pred, l, r, "fcmptmp").unwrap();
+                    cg.builder.build_int_z_extend(cmp, i64_ty, "fcmpext").unwrap().into()
+                }
                 _ => return Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), "unsupported float op")),
             };
             Ok(val)
