@@ -65,6 +65,34 @@ fn main() {
     }
 }
 
+#[cfg(all(feature = "llvm"))]
+fn repl_execute(source: &str, context: &Context) -> Result<(), String> {
+    use inkwell::execution_engine::JitFunction;
+    use azurite_codegen::CodeGen;
+
+    let main_az = format!("func main() {{\n{}\n}}", source);
+    let (mut parser, _tokens) = Parser::from_source(&main_az).map_err(|e| e.to_string())?;
+    let program = parser.parse_program().map_err(|e| e.to_string())?;
+
+    let mut checker = Checker::new();
+    checker.check_program(&program).map_err(|errs| {
+        errs.iter().map(|e| e.message.clone()).collect::<Vec<_>>().join("\n")
+    })?;
+
+    let mut cg = CodeGen::new(context, "repl_module");
+    cg.compile_program(&program).map_err(|e| e.to_string())?;
+
+    let ee = cg.module().create_jit_execution_engine(inkwell::OptimizationLevel::None)
+        .map_err(|e| format!("JIT error: {}", e))?;
+    unsafe {
+        let func: JitFunction<unsafe extern "C" fn()> = ee.get_function("main")
+            .map_err(|e| format!("JIT get_function: {}", e))?;
+        func.call();
+    }
+
+    Ok(())
+}
+
 fn cmd_repl() -> Result<(), String> {
     let completions = vec![
         "let", "func", "if", "else", "while", "for", "in", "match", "return",
@@ -102,6 +130,9 @@ fn cmd_repl() -> Result<(), String> {
 
     eprintln!("AzuriteLang REPL (Ctrl+C or 'exit' to quit)");
 
+    #[cfg(feature = "llvm")]
+    let context = Context::create();
+
     loop {
         let read = rl.readline("> ");
         match read {
@@ -112,13 +143,16 @@ fn cmd_repl() -> Result<(), String> {
 
                 match Lexer::new(trimmed).tokenize() {
                     Ok(tokens) => {
-                        let kinds: Vec<String> = tokens.iter().map(|t| t.kind.to_string()).collect();
-                        println!("  tokens: {}", kinds.join(" "));
                         match Parser::new(tokens).parse_program() {
                             Ok(prog) => {
                                 let mut checker = Checker::new();
                                 match checker.check_program(&prog) {
-                                    Ok(()) => println!("  OK"),
+                                    Ok(()) => {
+                                        #[cfg(feature = "llvm")]
+                                        if let Err(e) = repl_execute(trimmed, &context) {
+                                            eprintln!("  error: {}", e);
+                                        }
+                                    }
                                     Err(errs) => {
                                         for err in &errs { eprintln!("  type error: {}", err.message); }
                                     }
