@@ -10,7 +10,7 @@ pub fn check_stmt(c: &mut Checker, stmt: &Stmt) -> Option<Type> {
             let declared = type_annotation.as_ref().and_then(|t| c.resolve_type(t));
             let type_ = match (inferred, declared) {
                 (Some(inf), Some(dec)) => {
-                    if inf != dec { c.error(name.span, format!("type mismatch: expected '{}', got '{}'", dec, inf)); }
+                    if inf != dec && dec != Type::Any { c.error(name.span, format!("type mismatch: expected '{}', got '{}'", dec, inf)); }
                     Some(dec)
                 }
                 (Some(inf), None) => {

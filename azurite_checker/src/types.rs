@@ -15,6 +15,7 @@ pub enum Type {
         ret: Box<Type>,
     },
     Tuple(Vec<Type>),
+    Any,
 }
 
 impl fmt::Display for Type {
@@ -32,6 +33,7 @@ impl fmt::Display for Type {
                 let params: Vec<String> = params.iter().map(|p| p.to_string()).collect();
                 write!(f, "func({}) -> {}", params.join(", "), ret)
             }
+            Type::Any => write!(f, "any"),
             Type::Tuple(types) => {
                 let ts: Vec<String> = types.iter().map(|t| t.to_string()).collect();
                 write!(f, "({})", ts.join(", "))
@@ -49,6 +51,7 @@ impl Type {
             "bool" => Some(Type::Bool),
             "null" => Some(Type::Null),
             "void" => Some(Type::Void),
+            "any" => Some(Type::Any),
             _ => None,
         }
     }

@@ -191,13 +191,34 @@ fn compile_string_concat<'ctx>(cg: &CodeGen<'ctx>, l: inkwell::values::PointerVa
     Ok(buf.into())
 }
 
+fn to_i64<'ctx>(cg: &CodeGen<'ctx>, val: BasicValueEnum<'ctx>) -> BasicValueEnum<'ctx> {
+    match val {
+        BasicValueEnum::PointerValue(p) => {
+            cg.builder.build_ptr_to_int(p, cg.context.i64_type(), "p2i").unwrap().into()
+        }
+        BasicValueEnum::FloatValue(f) => {
+            cg.builder.build_float_to_signed_int(f, cg.context.i64_type(), "f2i").unwrap().into()
+        }
+        v => v,
+    }
+}
+
 fn compile_assign<'ctx>(cg: &mut CodeGen<'ctx>, left: &Expr, right: &Expr, span: Span) -> Result<BasicValueEnum<'ctx>, AzError> {
     match left {
         Expr::Ident(i) => {
             let var_name = i.name.clone();
             let rhs = cg.compile_expr(right)?;
             match cg.variables.get(&var_name) {
-                Some((ptr, _)) => { cg.builder.build_store(*ptr, rhs).unwrap(); Ok(rhs) }
+                Some((ptr, ty)) => {
+                    // Convert rhs to match alloca type (for `any` variables)
+                    let converted = if *ty == cg.context.i64_type().into() {
+                        to_i64(cg, rhs)
+                    } else {
+                        rhs
+                    };
+                    cg.builder.build_store(*ptr, converted).unwrap();
+                    Ok(rhs)
+                }
                 None => Err(AzError::new(ErrorKind::Semantic, span, format!("undefined '{}'", var_name)))
             }
         }

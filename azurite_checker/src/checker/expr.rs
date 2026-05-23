@@ -327,7 +327,8 @@ fn check_binary_op(c: &mut Checker, l: Option<Type>, r: Option<Type>, op: BinOp,
     let rt = r.unwrap_or(Type::Void);
     match op {
         BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
-            if lt.is_numeric() && rt.is_numeric() {
+            if lt == Type::Any || rt == Type::Any { Some(Type::Any) }
+            else if lt.is_numeric() && rt.is_numeric() {
                 Some(if lt == Type::Float || rt == Type::Float { Type::Float } else { Type::Int })
             } else if op == BinOp::Add && lt == Type::String && rt == Type::String {
                 Some(Type::String)
@@ -346,7 +347,7 @@ fn check_binary_op(c: &mut Checker, l: Option<Type>, r: Option<Type>, op: BinOp,
             else { c.error(span, format!("cannot apply '{}' to '{}' and '{}'", op, lt, rt)); None }
         }
         BinOp::Assign => {
-            if lt == rt || lt == Type::Null { Some(rt) }
+            if lt == rt || lt == Type::Null || lt == Type::Any || rt == Type::Any { Some(rt) }
             else { c.error(span, format!("cannot assign '{}' to '{}'", rt, lt)); None }
         }
         BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr => {

@@ -511,6 +511,9 @@ impl<'ctx> CodeGen<'ctx> {
             azurite_parser::ast::Type::Tuple(_) => {
                 self.context.ptr_type(inkwell::AddressSpace::default()).into()
             }
+            azurite_parser::ast::Type::Name(n) if n == "any" => {
+                self.context.i64_type().into()
+            }
             _ => self.context.i64_type().into(),
         }
     }
