@@ -30,6 +30,9 @@ func main() {
 - **Chain comparisons** `0 <= i < 10`
 - **Compound assignments** `+=`, `-=`, `*=`, etc.
 - **Increment/Decrement** `++i`, `--i`
+- **Ternary operator** `x ? a : b`
+- **String/array slicing** `s[0:5]`
+- **Switch** `switch x { 1 => ... }`
 - **Error handling** — `try { } catch e { }` and `throw`
 - **JIT REPL** — interactive execution with rustyline and LLVM JIT
 - **VS Code extension** — syntax highlighting for `.az` files
