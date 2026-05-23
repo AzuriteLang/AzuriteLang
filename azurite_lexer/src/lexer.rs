@@ -1,5 +1,53 @@
 use crate::token::{Span, Token, TokenKind};
 
+fn preprocess_interpolation(source: &str) -> String {
+    // Converts "Hello \{name}" to "Hello " + name
+    // Note: expressions inside \{...} must evaluate to string
+    let mut result = String::new();
+    let chars: Vec<char> = source.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '"' {
+            result.push('"');
+            i += 1;
+            let mut prefix = String::new();
+            while i < chars.len() {
+                if chars[i] == '\\' && i + 1 < chars.len() && chars[i + 1] == '{' {
+                    // Interpolation: close string, add + expr + , reopen string
+                    result.push_str(&prefix);
+                    result.push_str("\" + ");
+                    i += 2; // skip \{
+                    let mut depth = 1;
+                    while i < chars.len() && depth > 0 {
+                        if chars[i] == '{' { depth += 1; }
+                        else if chars[i] == '}' { depth -= 1; }
+                        if depth > 0 { result.push(chars[i]); }
+                        i += 1;
+                    }
+                    result.push_str(" + \"");
+                    prefix.clear();
+                } else if chars[i] == '"' {
+                    result.push_str(&prefix);
+                    result.push('"');
+                    i += 1;
+                    break;
+                } else if chars[i] == '\\' {
+                    prefix.push(chars[i]);
+                    i += 1;
+                    if i < chars.len() { prefix.push(chars[i]); i += 1; }
+                } else {
+                    prefix.push(chars[i]);
+                    i += 1;
+                }
+            }
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+    result
+}
+
 pub struct Lexer {
     chars: Vec<char>,
     pos: usize,
@@ -9,8 +57,9 @@ pub struct Lexer {
 
 impl Lexer {
     pub fn new(input: &str) -> Self {
+        let processed = preprocess_interpolation(input);
         Self {
-            chars: input.chars().collect(),
+            chars: processed.chars().collect(),
             pos: 0,
             line: 1,
             col: 1,
