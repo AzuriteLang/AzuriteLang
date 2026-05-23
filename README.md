@@ -28,6 +28,8 @@ func main() {
 - **Setter** `obj.field = val`
 - **Type operator** `x is string`
 - **Chain comparisons** `0 <= i < 10`
+- **Compound assignments** `+=`, `-=`, `*=`, etc.
+- **Increment/Decrement** `++i`, `--i`
 - **Error handling** — `try { } catch e { }` and `throw`
 - **JIT REPL** — interactive execution with rustyline and LLVM JIT
 - **VS Code extension** — syntax highlighting for `.az` files
@@ -290,6 +292,7 @@ arr[1] = 99
 print(a, b, c)     // print any types (varargs)
 len(s)             // string length
 chr(n)             // int ASCII code → 1-char string
+str(x)             // convert int/float/bool to string
 sqrt(x)            // square root
 abs(x)             // absolute value (int)
 int(f)             // float to int
