@@ -26,6 +26,8 @@ pub fn parse_stmt(p: &mut Parser) -> Result<Stmt, AzError> {
         Some(TokenKind::Return) => parse_return(p),
         Some(TokenKind::Break) => { p.advance(); p.expect_semicolon()?; Ok(Stmt::Break) }
         Some(TokenKind::Continue) => { p.advance(); p.expect_semicolon()?; Ok(Stmt::Continue) }
+        Some(TokenKind::Try) => parse_try(p),
+        Some(TokenKind::Throw) => parse_throw(p),
         Some(TokenKind::Loop) => parse_loop(p),
         _ => {
             let e = expr::parse_expr(p, 0)?;
@@ -246,4 +248,20 @@ fn parse_return(p: &mut Parser) -> Result<Stmt, AzError> {
     };
     p.expect_semicolon()?;
     Ok(Stmt::Return { value })
+}
+
+fn parse_try(p: &mut Parser) -> Result<Stmt, AzError> {
+    p.advance();
+    let try_block = expr::parse_block(p)?;
+    p.expect(TokenKind::Catch, "expected 'catch' after try block")?;
+    let catch_var = p.parse_ident()?;
+    let catch_block = expr::parse_block(p)?;
+    Ok(Stmt::Try { try_block: Box::new(try_block), catch_var, catch_block: Box::new(catch_block) })
+}
+
+fn parse_throw(p: &mut Parser) -> Result<Stmt, AzError> {
+    p.advance();
+    let value = expr::parse_expr(p, 0)?;
+    p.expect_semicolon()?;
+    Ok(Stmt::Throw { value: Box::new(value) })
 }

@@ -59,6 +59,14 @@ pub enum Stmt {
         names: Vec<Ident>,
         value: Box<Expr>,
     },
+    Try {
+        try_block: Box<Expr>,
+        catch_var: Ident,
+        catch_block: Box<Expr>,
+    },
+    Throw {
+        value: Box<Expr>,
+    },
 }
 
 impl Stmt {
@@ -77,6 +85,8 @@ impl Stmt {
             Stmt::For { name, .. } => name.span,
             Stmt::Expr(e) => e.span(),
             Stmt::Destructure { value, .. } => value.span(),
+            Stmt::Try { try_block, .. } => try_block.span(),
+            Stmt::Throw { value, .. } => value.span(),
         }
     }
 }

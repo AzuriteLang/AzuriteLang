@@ -38,6 +38,9 @@ pub struct CodeGen<'ctx> {
     pub putchar: Option<FunctionValue<'ctx>>,
     pub loop_stack: Vec<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
     pub function_defaults: HashMap<String, Vec<Option<Box<Expr>>>>,
+    pub jmp_buf: Option<PointerValue<'ctx>>,
+    pub err_ptr: Option<PointerValue<'ctx>>,
+    pub caught_flag: Option<PointerValue<'ctx>>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -59,6 +62,9 @@ impl<'ctx> CodeGen<'ctx> {
             putchar: None,
             loop_stack: Vec::new(),
             function_defaults: HashMap::new(),
+            jmp_buf: None,
+            err_ptr: None,
+            caught_flag: None,
         }
     }
 
@@ -328,6 +334,61 @@ impl<'ctx> CodeGen<'ctx> {
                 if !self.has_terminator() { self.builder.build_unconditional_branch(merge_bb).unwrap(); }
                 self.builder.position_at_end(merge_bb);
                 Ok(Some(self.context.i64_type().const_zero().into()))
+            }
+            Stmt::Try { try_block, catch_var, catch_block } => {
+                let i64_ty = self.context.i64_type();
+                let ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
+
+                // Flag: was throw called?
+                let caught_flag = self.create_entry_alloca(i64_ty.into(), "__caught");
+                self.builder.build_store(caught_flag, i64_ty.const_zero()).unwrap();
+                // Error value storage
+                let err_alloca = self.create_entry_alloca(ptr_ty.into(), "__err");
+                self.builder.build_store(err_alloca, ptr_ty.const_null()).unwrap();
+
+                self.jmp_buf = None;
+                self.err_ptr = Some(err_alloca);
+                self.caught_flag = Some(caught_flag);
+
+                // Execute the try block completely
+                self.compile_block_stmts(try_block, false)?;
+
+                // After try: check if caught
+                let cf = self.function.unwrap();
+                let catch_bb = self.context.append_basic_block(cf, "catch_body");
+                let merge_bb = self.context.append_basic_block(cf, "try_merge");
+                if !self.has_terminator() {
+                    let flag_val = self.builder.build_load(i64_ty, caught_flag, "flag").unwrap().into_int_value();
+                    let is_caught = self.builder.build_int_compare(inkwell::IntPredicate::NE, flag_val, i64_ty.const_zero(), "is_caught").unwrap();
+                    self.builder.build_conditional_branch(is_caught, catch_bb, merge_bb).unwrap();
+                }
+
+                // Catch block
+                self.builder.position_at_end(catch_bb);
+                let err_val = self.builder.build_load(ptr_ty, err_alloca, "err_val").unwrap();
+                let catch_alloca = self.create_entry_alloca(ptr_ty.into(), &catch_var.name);
+                self.builder.build_store(catch_alloca, err_val).unwrap();
+                self.variables.insert(catch_var.name.clone(), (catch_alloca, ptr_ty.into()));
+                self.compile_block_stmts(catch_block, false)?;
+                if !self.has_terminator() { self.builder.build_unconditional_branch(merge_bb).unwrap(); }
+
+                self.builder.position_at_end(merge_bb);
+                self.err_ptr = None;
+                self.caught_flag = None;
+                Ok(Some(i64_ty.const_zero().into()))
+            }
+            Stmt::Throw { value } => {
+                let i64_ty = self.context.i64_type();
+                let err_val = self.compile_expr(value)?;
+
+                if let Some(ep) = self.err_ptr {
+                    self.builder.build_store(ep, err_val).unwrap();
+                }
+                if let Some(cf) = self.caught_flag {
+                    self.builder.build_store(cf, i64_ty.const_int(1, false)).unwrap();
+                }
+
+                Ok(Some(i64_ty.const_zero().into()))
             }
             Stmt::While { condition, body } => {
                 let cf = self.function.unwrap();

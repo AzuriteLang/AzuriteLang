@@ -135,6 +135,20 @@ pub fn check_stmt(c: &mut Checker, stmt: &Stmt) -> Option<Type> {
             None
         }
         Stmt::Expr(expr) => super::expr::check_expr(c, expr),
+        Stmt::Try { try_block, catch_var, catch_block } => {
+            c.scope.push();
+            super::expr::check_expr(c, try_block);
+            c.scope.pop();
+            c.scope.push();
+            c.scope.insert(&catch_var.name, Symbol { name: catch_var.name.clone(), kind: SymbolKind::Variable, type_: Type::String }).ok();
+            super::expr::check_expr(c, catch_block);
+            c.scope.pop();
+            None
+        }
+        Stmt::Throw { value } => {
+            super::expr::check_expr(c, value);
+            None
+        }
         Stmt::Destructure { names, value } => {
             let val_type = super::expr::check_expr(c, value);
             match val_type {

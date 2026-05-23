@@ -54,6 +54,9 @@ pub enum TokenKind {
     Not,
     Loop,
     Is,
+    Try,
+    Catch,
+    Throw,
 
     // Literals
     Int(i64),
@@ -145,6 +148,9 @@ impl fmt::Display for TokenKind {
             TokenKind::Not => write!(f, "not"),
             TokenKind::Loop => write!(f, "loop"),
             TokenKind::Is => write!(f, "is"),
+            TokenKind::Try => write!(f, "try"),
+            TokenKind::Catch => write!(f, "catch"),
+            TokenKind::Throw => write!(f, "throw"),
             TokenKind::Int(n) => write!(f, "{}", n),
             TokenKind::Float(n) => write!(f, "{}", n),
             TokenKind::String(s) => write!(f, "\"{}\"", s),
