@@ -24,6 +24,7 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                 "exit" => return compile_exit(cg, args),
                 "char_at" => return compile_char_at(cg, args),
                 "chr" => return compile_chr(cg, args),
+                "str" => return compile_str(cg, args),
                 "sin" => return compile_math1(cg, "sin", args),
                 "cos" => return compile_math1(cg, "cos", args),
                 "tan" => return compile_math1(cg, "tan", args),
@@ -459,6 +460,111 @@ fn compile_chr<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValue
     };
     cg.builder.build_store(null_gep, cg.context.i8_type().const_zero()).unwrap();
     Ok(buf.into())
+}
+
+fn compile_str<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    if args.is_empty() { return Ok(cg.builder.build_global_string_ptr("", "empty_str").unwrap().as_pointer_value().into()); }
+    let val = cg.compile_expr(&args[0])?;
+    let i64_ty = cg.context.i64_type();
+    let i8_ty = cg.context.i8_type();
+
+    match val {
+        BasicValueEnum::PointerValue(p) => return Ok(p.into()),
+        BasicValueEnum::FloatValue(f) => {
+            // For float, fall back to a simple int-cast approach
+            return Ok(cg.builder.build_global_string_ptr("<float>", "float_fmt").unwrap().as_pointer_value().into());
+        }
+        _ => {}
+    }
+
+    // Manual int-to-string: build string by reversing digits
+    let i = val.into_int_value();
+    let cf = cg.function.unwrap();
+    let i64_zero = i64_ty.const_zero();
+
+    // Buffer: 24 bytes is enough for any i64
+    let buf = cg.builder.build_array_alloca(i8_ty, i64_ty.const_int(24, false), "str_buf").unwrap();
+
+    // Detect negative
+    let is_neg = cg.builder.build_int_compare(inkwell::IntPredicate::SLT, i, i64_zero, "is_neg").unwrap();
+
+    // Get absolute value (for MIN_INT, int_neg overflow is fine)
+    let neg_i = cg.builder.build_int_neg(i, "neg_i").unwrap();
+    let abs_i = cg.builder.build_select(is_neg, neg_i, i, "abs_i").unwrap();
+
+    // Start at buffer end + 1, write null first, then digits backwards
+    let pos_alloca = cg.create_entry_alloca(i64_ty.into(), "str_pos");
+    let cur_alloca = cg.create_entry_alloca(i64_ty.into(), "str_cur");
+    cg.builder.build_store(cur_alloca, abs_i).unwrap();
+    // Initialize pos to 22 (we have 24 bytes, leave 1 for sign)
+    cg.builder.build_store(pos_alloca, i64_ty.const_int(22, false)).unwrap();
+
+    // Write null terminator at position 22 (will be overwritten if there are digits)
+    let null_at = unsafe { cg.builder.build_gep(i8_ty, buf, &[i64_ty.const_int(22, false)], "null_at").unwrap() };
+    cg.builder.build_store(null_at, i8_ty.const_zero()).unwrap();
+
+    // Digits loop: while cur != 0 { pos--; buf[pos] = '0' + cur % 10; cur /= 10; }
+    let cond_bb = cg.context.append_basic_block(cf, "st_cond");
+    let body_bb = cg.context.append_basic_block(cf, "st_body");
+    let after_bb = cg.context.append_basic_block(cf, "st_aft");
+    cg.builder.build_unconditional_branch(cond_bb).unwrap();
+
+    cg.builder.position_at_end(cond_bb);
+    let cv = cg.builder.build_load(i64_ty, cur_alloca, "cv").unwrap().into_int_value();
+    let is_done = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, cv, i64_zero, "isd").unwrap();
+    cg.builder.build_conditional_branch(is_done, after_bb, body_bb).unwrap();
+
+    cg.builder.position_at_end(body_bb);
+    cg.loop_stack.push((cond_bb, after_bb));
+    let cv2 = cg.builder.build_load(i64_ty, cur_alloca, "cv2").unwrap().into_int_value();
+    let dig = cg.builder.build_int_signed_rem(cv2, i64_ty.const_int(10, false), "dig").unwrap();
+    let ch = cg.builder.build_int_add(dig, i64_ty.const_int(48, false), "ch").unwrap();
+    let chi = cg.builder.build_int_truncate(ch, i8_ty, "chi").unwrap();
+    let p1 = cg.builder.build_load(i64_ty, pos_alloca, "p1").unwrap().into_int_value();
+    let p2 = cg.builder.build_int_sub(p1, i64_ty.const_int(1, false), "p2").unwrap();
+    cg.builder.build_store(pos_alloca, p2).unwrap();
+    let gp = unsafe { cg.builder.build_gep(i8_ty, buf, &[p2], "gp").unwrap() };
+    cg.builder.build_store(gp, chi).unwrap();
+    let dv = cg.builder.build_int_signed_div(cv2, i64_ty.const_int(10, false), "dv").unwrap();
+    cg.builder.build_store(cur_alloca, dv).unwrap();
+    cg.builder.build_unconditional_branch(cond_bb).unwrap();
+    cg.loop_stack.pop();
+
+    cg.builder.position_at_end(after_bb);
+
+    // If value was 0, overwrite null with '0' and move pos back
+    let iz = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, abs_i.into_int_value(), i64_zero, "iz").unwrap();
+    let zb = cg.context.append_basic_block(cf, "st_zb");
+    let sk = cg.context.append_basic_block(cf, "st_sk");
+    cg.builder.build_conditional_branch(iz, zb, sk).unwrap();
+    cg.builder.position_at_end(zb);
+    let pz = cg.builder.build_load(i64_ty, pos_alloca, "pz").unwrap().into_int_value();
+    let pz2 = cg.builder.build_int_sub(pz, i64_ty.const_int(1, false), "pz2").unwrap();
+    cg.builder.build_store(pos_alloca, pz2).unwrap();
+    let gz = unsafe { cg.builder.build_gep(i8_ty, buf, &[pz2], "gz").unwrap() };
+    cg.builder.build_store(gz, i8_ty.const_int(48, false)).unwrap();
+    cg.builder.build_unconditional_branch(sk).unwrap();
+
+    cg.builder.position_at_end(sk);
+
+    // Handle negative sign
+    let nb = cg.context.append_basic_block(cf, "st_nb");
+    let nn = cg.context.append_basic_block(cf, "st_nn");
+    cg.builder.build_conditional_branch(is_neg, nb, nn).unwrap();
+    cg.builder.position_at_end(nb);
+    let pn = cg.builder.build_load(i64_ty, pos_alloca, "pn").unwrap().into_int_value();
+    let pn2 = cg.builder.build_int_sub(pn, i64_ty.const_int(1, false), "pn2").unwrap();
+    cg.builder.build_store(pos_alloca, pn2).unwrap();
+    let gn = unsafe { cg.builder.build_gep(i8_ty, buf, &[pn2], "gn").unwrap() };
+    cg.builder.build_store(gn, i8_ty.const_int(45, false)).unwrap();
+    cg.builder.build_unconditional_branch(nn).unwrap();
+
+    cg.builder.position_at_end(nn);
+
+    // Return pointer to buf + pos
+    let fp = cg.builder.build_load(i64_ty, pos_alloca, "fp").unwrap().into_int_value();
+    let sp = unsafe { cg.builder.build_gep(i8_ty, buf, &[fp], "sp").unwrap() };
+    Ok(sp.into())
 }
 
 fn compile_math1<'ctx>(cg: &mut CodeGen<'ctx>, name: &str, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
