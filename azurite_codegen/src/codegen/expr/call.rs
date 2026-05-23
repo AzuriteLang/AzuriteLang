@@ -301,7 +301,16 @@ fn compile_chr<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValue
     let val = cg.compile_expr(&args[0])?;
     let i64_val = val.into_int_value();
     let i8_val = cg.builder.build_int_truncate(i64_val, cg.context.i8_type(), "chr_trunc").unwrap();
-    let buf = cg.builder.build_alloca(cg.context.i8_type(), "chr_buf").unwrap();
+    // Use malloc for heap-allocated buffer (stack alloca is freed on return)
+    if cg.module.get_function("malloc").is_none() {
+        let malloc_ty = cg.context.ptr_type(inkwell::AddressSpace::default())
+            .fn_type(&[cg.context.i64_type().into()], false);
+        cg.module.add_function("malloc", malloc_ty, None);
+    }
+    let buf = cg.builder.build_call(
+        cg.module.get_function("malloc").unwrap(),
+        &[cg.context.i64_type().const_int(2, false).into()], "chr_malloc"
+    ).unwrap().try_as_basic_value().unwrap_basic().into_pointer_value();
     cg.builder.build_store(buf, i8_val).unwrap();
     let null_gep = unsafe {
         cg.builder.build_gep(cg.context.i8_type(), buf, &[cg.context.i64_type().const_int(1, false)], "null_gep").unwrap()

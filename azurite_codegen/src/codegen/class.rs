@@ -102,7 +102,8 @@ fn compile_method<'ctx>(
     let is_void = return_type.is_none() || matches!(return_type, Some(Type::Name(ref n)) if n == "void" || n == "none");
     let ret_is_string = matches!(return_type, Some(Type::Name(ref n)) if n == "string");
     let ret_is_float = matches!(return_type, Some(Type::Name(ref n)) if n == "float");
-    let ret_is_instance = !is_void && !ret_is_string && !ret_is_float && matches!(return_type, Some(Type::Name(_)));
+    let ret_name = return_type.as_ref().and_then(|t| if let Type::Name(n) = t { Some(n.as_str()) } else { None });
+    let ret_is_instance = !is_void && !ret_is_string && !ret_is_float && ret_name.map_or(false, |n| n != "int" && n != "bool");
     let mut param_types: Vec<BasicMetadataTypeEnum> = vec![self_type.into()];
     for p in params.iter().filter(|p| p.name.name != "self") { param_types.push(cg.az_param_type(&p.type_annotation)); }
 
