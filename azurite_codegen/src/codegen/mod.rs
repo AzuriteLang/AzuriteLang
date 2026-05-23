@@ -96,18 +96,19 @@ impl<'ctx> CodeGen<'ctx> {
                 let param_types: Vec<BasicMetadataTypeEnum> = params.iter()
                     .map(|p| self.az_param_type(&p.type_annotation))
                     .collect();
+                let is_var_args = params.iter().any(|p| p.vararg);
 
                 let fn_val = if is_void {
-                    let ft = self.context.void_type().fn_type(&param_types, false);
+                    let ft = self.context.void_type().fn_type(&param_types, is_var_args);
                     self.module.add_function(&name.name, ft, None)
                 } else if ret_is_string || ret_is_instance || ret_is_tuple {
-                    let ft = self.context.ptr_type(inkwell::AddressSpace::default()).fn_type(&param_types, false);
+                    let ft = self.context.ptr_type(inkwell::AddressSpace::default()).fn_type(&param_types, is_var_args);
                     self.module.add_function(&name.name, ft, None)
                 } else if ret_is_float {
-                    let ft = self.context.f64_type().fn_type(&param_types, false);
+                    let ft = self.context.f64_type().fn_type(&param_types, is_var_args);
                     self.module.add_function(&name.name, ft, None)
                 } else {
-                    let ft = self.context.i64_type().fn_type(&param_types, false);
+                    let ft = self.context.i64_type().fn_type(&param_types, is_var_args);
                     self.module.add_function(&name.name, ft, None)
                 };
 

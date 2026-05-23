@@ -31,8 +31,8 @@ fn resolve_instance_method(c: &mut Checker, instance: &Type, method: &str, args:
             let sym_info = c.scope.lookup(&fn_name).map(|s| s.type_.clone());
             match sym_info {
                 Some(Type::Func { params, ret }) => {
-                    if !params.is_empty() && params.len() != args.len() {
-                        c.error(span, format!("expected {} args, got {}", params.len(), args.len()));
+                    if !params.is_empty() && params.len() > args.len() {
+                        c.error(span, format!("expected at least {} args, got {}", params.len(), args.len()));
                     }
                     for (i, arg) in args.iter().enumerate() {
                         let arg_type = super::expr::check_expr(c, arg);
@@ -163,8 +163,8 @@ pub fn check_expr(c: &mut Checker, expr: &Expr) -> Option<Type> {
             let callee_type = check_expr(c, callee);
             match callee_type {
                 Some(Type::Func { params, ret }) => {
-                    if !params.is_empty() && params.len() != args.len() {
-                        c.error(span, format!("expected {} args, got {}", params.len(), args.len()));
+                    if !params.is_empty() && params.len() > args.len() {
+                        c.error(span, format!("expected at least {} args, got {}", params.len(), args.len()));
                     }
                     for (i, arg) in args.iter().enumerate() {
                         let arg_type = check_expr(c, arg);

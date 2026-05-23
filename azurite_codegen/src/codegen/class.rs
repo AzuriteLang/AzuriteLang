@@ -59,7 +59,8 @@ fn compile_method<'ctx>(
     if is_ctor {
         let mut param_types: Vec<BasicMetadataTypeEnum> = Vec::new();
         for p in params { param_types.push(cg.az_param_type(&p.type_annotation)); }
-        let ft = cg.context.ptr_type(inkwell::AddressSpace::default()).fn_type(&param_types, false);
+        let is_var_args = params.iter().any(|p| p.vararg);
+        let ft = cg.context.ptr_type(inkwell::AddressSpace::default()).fn_type(&param_types, is_var_args);
         let fn_val = cg.module.add_function(&fn_name, ft, None);
         let entry = cg.context.append_basic_block(fn_val, "entry");
         cg.builder.position_at_end(entry);
@@ -107,17 +108,18 @@ fn compile_method<'ctx>(
     let mut param_types: Vec<BasicMetadataTypeEnum> = vec![self_type.into()];
     for p in params.iter().filter(|p| p.name.name != "self") { param_types.push(cg.az_param_type(&p.type_annotation)); }
 
+    let is_var_args = params.iter().any(|p| p.vararg);
     let fn_val = if is_void {
-        let ft = cg.context.void_type().fn_type(&param_types, false);
+        let ft = cg.context.void_type().fn_type(&param_types, is_var_args);
         cg.module.add_function(&fn_name, ft, None)
     } else if ret_is_string || ret_is_instance {
-        let ft = cg.context.ptr_type(inkwell::AddressSpace::default()).fn_type(&param_types, false);
+        let ft = cg.context.ptr_type(inkwell::AddressSpace::default()).fn_type(&param_types, is_var_args);
         cg.module.add_function(&fn_name, ft, None)
     } else if ret_is_float {
-        let ft = cg.context.f64_type().fn_type(&param_types, false);
+        let ft = cg.context.f64_type().fn_type(&param_types, is_var_args);
         cg.module.add_function(&fn_name, ft, None)
     } else {
-        let ft = cg.context.i64_type().fn_type(&param_types, false);
+        let ft = cg.context.i64_type().fn_type(&param_types, is_var_args);
         cg.module.add_function(&fn_name, ft, None)
     };
 

@@ -90,6 +90,7 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                                 let new_params: Vec<Param> = fields.iter().map(|f| Param {
                                     name: f.name.clone(),
                                     type_annotation: Some(subst_type_multi(&f.type_, &tp, &concrete_types)),
+                                    vararg: false,
                                 }).collect();
                                 m.push(Stmt::Func {
                                     name: Ident { name: "new".to_string(), span: Span::new(0, 0, 1, 1) },

@@ -13,6 +13,7 @@ pub enum Type {
 pub struct Param {
     pub name: Ident,
     pub type_annotation: Option<Type>,
+    pub vararg: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

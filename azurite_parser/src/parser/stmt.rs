@@ -102,12 +102,14 @@ fn parse_params(p: &mut Parser) -> Result<Vec<Param>, AzError> {
             Some(TokenKind::RParen) | None => break,
             Some(TokenKind::Comma) => { p.advance(); }
             _ => {
+                let vararg = p.peek_kind() == Some(TokenKind::DotDot);
+                if vararg { p.advance(); }
                 let name = p.parse_ident_or_self()?;
                 let type_annotation = if p.peek_kind() == Some(TokenKind::Colon) {
                     p.advance();
                     Some(super::type_::parse_type(p)?)
                 } else { None };
-                params.push(Param { name, type_annotation });
+                params.push(Param { name, type_annotation, vararg });
             }
         }
     }

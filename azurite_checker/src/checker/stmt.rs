@@ -37,7 +37,7 @@ pub fn check_stmt(c: &mut Checker, stmt: &Stmt) -> Option<Type> {
             for method in methods {
                 if let Stmt::Func { name: mname, params: mparams, return_type, .. } = method {
                     let fn_name = format!("{}_{}", concrete_name, mname.name);
-                    let resolved_params: Vec<Type> = mparams.iter().filter(|p| p.name.name != "self").map(|p| {
+                    let resolved_params: Vec<Type> = mparams.iter().filter(|p| p.name.name != "self" && !p.vararg).map(|p| {
                         p.type_annotation.as_ref().and_then(|t| c.resolve_type(t)).unwrap_or(Type::Void)
                     }).collect();
                     let resolved_ret = if mname.name == "new" {
@@ -69,7 +69,7 @@ pub fn check_stmt(c: &mut Checker, stmt: &Stmt) -> Option<Type> {
             c.expected_return = None;
             c.scope.pop();
             let func_type = Type::Func {
-                params: params.iter().map(|p| p.type_annotation.as_ref().and_then(|t| c.resolve_type(t)).unwrap_or(Type::Void)).collect(),
+                params: params.iter().filter(|p| !p.vararg).map(|p| p.type_annotation.as_ref().and_then(|t| c.resolve_type(t)).unwrap_or(Type::Void)).collect(),
                 ret: Box::new(ret_type),
             };
             c.scope.insert(&name.name, Symbol { name: name.name.clone(), kind: SymbolKind::Function, type_: func_type })
