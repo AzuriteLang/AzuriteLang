@@ -47,15 +47,6 @@ func main() {
 - LLVM 22.1 SDK *(for full compilation)*
 - [VS Code extension](https://github.com/AzuriteLang/AzuriteVsCode) *(syntax highlighting)*
 
-### Installer (Windows)
-
-Télécharge le dernier `.exe` depuis la [page Releases](https://github.com/AzuriteLang/AzuriteLang/releases) — LLVM est inclus, PATH configuré automatiquement.
-
-```bat
-# Ou construis-le toi-même
-installer\build-installer.bat
-```
-
 ### Build from source
 
 ```bash
