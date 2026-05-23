@@ -29,6 +29,7 @@ func main() {
 - **Type operator** `x is string`
 - **Chain comparisons** `0 <= i < 10`
 - **JIT REPL** — interactive execution with rustyline and LLVM JIT
+- **VS Code extension** — syntax highlighting for `.az` files
 - **Package manager** — git dependencies with `azurite.toml`
 - **Standard library** — `string`, `math`, `random`, `color` libs on GitHub
 
@@ -38,6 +39,7 @@ func main() {
 
 - [Rust](https://rustup.rs) 1.75+
 - LLVM 22.1 SDK *(for full compilation)*
+- [VS Code extension](https://github.com/AzuriteLang/AzuriteVsCode) *(syntax highlighting)*
 
 ### Build
 
