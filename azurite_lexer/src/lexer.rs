@@ -159,7 +159,7 @@ impl Lexer {
                 Some('"') => {
                     self.bump();
                     let span = Span::new(start, self.pos, start_line, start_col);
-                    return Ok(Token::new(TokenKind::String(value), span));
+                    return Ok(Token::new(TokenKind::String(value.into()), span));
                 }
                 Some('\\') => {
                     self.bump();
@@ -245,7 +245,7 @@ impl Lexer {
             "and" => TokenKind::And,
             "or" => TokenKind::Or,
             "not" => TokenKind::Not,
-            _ => TokenKind::Ident(ident),
+            _ => TokenKind::Ident(ident.into()),
         };
         Ok(Token::new(kind, span))
     }

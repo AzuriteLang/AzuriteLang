@@ -26,7 +26,7 @@ fn test_keywords() {
 fn test_keywords_are_not_identifiers() {
     let tokens = Lexer::new("let letty").tokenize().unwrap();
     assert_eq!(tokens[0].kind, TokenKind::Let);
-    assert_eq!(tokens[1].kind, TokenKind::Ident("letty".to_string()));
+    assert_eq!(tokens[1].kind, TokenKind::Ident("letty".into()));
 }
 
 #[test]

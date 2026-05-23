@@ -6,7 +6,7 @@ use crate::parser::Parser;
 pub fn parse_type(p: &mut Parser) -> Result<Type, AzError> {
     match p.peek_kind() {
         Some(TokenKind::Ident(name)) => {
-            let name = name.clone();
+            let name = name.to_string();
             p.advance();
             if p.peek_kind() == Some(TokenKind::Less) {
                 p.advance();

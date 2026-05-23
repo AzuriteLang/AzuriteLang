@@ -102,5 +102,5 @@ fn test_lexer_class_keyword() {
 fn test_lexer_self_not_identifier() {
     let tokens = Lexer::new("self selfie").tokenize().unwrap();
     assert_eq!(tokens[0].kind, TokenKind::Self_);
-    assert_eq!(tokens[1].kind, TokenKind::Ident("selfie".to_string()));
+    assert_eq!(tokens[1].kind, TokenKind::Ident("selfie".into()));
 }

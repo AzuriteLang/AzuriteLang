@@ -7,7 +7,7 @@ pub fn parse_expr(p: &mut Parser, min_bp: u8) -> Result<Expr, AzError> {
     let mut lhs = match p.peek_kind() {
         Some(TokenKind::Int(n)) => { p.advance(); Expr::Int(n) }
         Some(TokenKind::Float(n)) => { p.advance(); Expr::Float(n) }
-        Some(TokenKind::String(s)) => { p.advance(); Expr::String(s) }
+        Some(TokenKind::String(s)) => { p.advance(); Expr::String(s.to_string()) }
         Some(TokenKind::Char(c)) => { p.advance(); Expr::Char(c) }
         Some(TokenKind::True) => { p.advance(); Expr::Bool(true) }
         Some(TokenKind::False) => { p.advance(); Expr::Bool(false) }
@@ -15,7 +15,7 @@ pub fn parse_expr(p: &mut Parser, min_bp: u8) -> Result<Expr, AzError> {
         Some(TokenKind::Self_) => { p.advance(); Expr::Self_ }
         Some(TokenKind::Super) => { p.advance(); Expr::Super }
         Some(TokenKind::Ident(name)) => {
-            let ident = Ident { name: name.clone(), span: p.current_span() };
+            let ident = Ident { name: name.to_string(), span: p.current_span() };
             p.advance();
             Expr::Ident(ident)
         }
@@ -52,7 +52,7 @@ pub fn parse_expr(p: &mut Parser, min_bp: u8) -> Result<Expr, AzError> {
             Some(TokenKind::Dot) => {
                 p.advance();
                 let field = match p.peek_kind() {
-                    Some(TokenKind::Ident(name)) => { let n = name.clone(); p.advance(); n }
+                    Some(TokenKind::Ident(name)) => { let n = name.to_string(); p.advance(); n }
                     _ => return Err(p.err("expected field name after '.'")),
                 };
                 if p.peek_kind() == Some(TokenKind::LParen) {
@@ -69,8 +69,8 @@ pub fn parse_expr(p: &mut Parser, min_bp: u8) -> Result<Expr, AzError> {
                 let rhs = parse_expr(p, 9)?;
                 lhs = Expr::Range { start: Box::new(lhs), end: Box::new(rhs) };
             }
-            Some(ref op_kind) if parser::is_binop(op_kind) => {
-                let op = parser::token_to_binop(op_kind.clone()).unwrap();
+            Some(op_kind) if parser::is_binop(&op_kind) => {
+                let op = parser::token_to_binop(op_kind).unwrap();
                 let (l_bp, r_bp) = parser::infix_binding_power(op);
                 if l_bp < min_bp { break; }
                 p.advance();

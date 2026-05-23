@@ -201,7 +201,7 @@ fn test_match_string() {
     let prog = parse(r#"match x { "hello" => 1 }"#);
     match &prog.statements[0] {
         Stmt::Expr(Expr::Match { arms, .. }) => {
-            assert_eq!(arms[0].pattern, Pattern::String("hello".to_string()));
+            assert_eq!(arms[0].pattern, Pattern::String("hello".into()));
         }
         _ => panic!("expected match"),
     }
@@ -308,7 +308,7 @@ fn test_string_concat_multi() {
 #[test]
 fn test_string_escape() {
     let tokens = Lexer::new(r#""\n\t\r\\\0""#).tokenize().unwrap();
-    assert_eq!(tokens[0].kind, TokenKind::String("\n\t\r\\\0".to_string()));
+    assert_eq!(tokens[0].kind, TokenKind::String("\n\t\r\\\0".into()));
 }
 
 // --- Comment edge cases ---

@@ -184,8 +184,8 @@ fn parse_for(p: &mut Parser) -> Result<Stmt, AzError> {
     p.advance();
     let name = p.parse_ident()?;
     match p.peek_kind() {
-        Some(TokenKind::Ident(ref s)) if s == "in" => { p.advance(); }
-        Some(ref other) => return Err(p.err(format!("expected 'in', found {}", other))),
+        Some(TokenKind::Ident(ref s)) if s.as_ref() == "in" => { p.advance(); }
+        Some(other) => return Err(p.err(format!("expected 'in', found {}", other))),
         None => return Err(p.err("expected 'in'")),
     }
     let iterable = expr::parse_expr(p, 0)?;
@@ -198,7 +198,7 @@ fn parse_import(p: &mut Parser) -> Result<Stmt, AzError> {
     p.advance();
     match p.peek_kind() {
         Some(TokenKind::String(path)) => {
-            let path = path.clone();
+            let path = path.to_string();
             p.advance();
             p.expect_semicolon()?;
             Ok(Stmt::Import { path, span })

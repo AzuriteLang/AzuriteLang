@@ -56,8 +56,8 @@ impl Parser {
 
     pub fn expect(&mut self, expected: TokenKind, msg: &str) -> Result<(), AzError> {
         match self.peek_kind() {
-            Some(ref k) if *k == expected => { self.advance(); Ok(()) }
-            Some(ref other) => Err(self.err(format!("{}: expected {}, found {}", msg, expected, other))),
+            Some(k) if k == expected => { self.advance(); Ok(()) }
+            Some(other) => Err(self.err(format!("{}: expected {}, found {}", msg, expected, other))),
             None => Err(self.err(format!("{}: expected {}, found EOF", msg, expected))),
         }
     }
@@ -71,11 +71,11 @@ impl Parser {
         match self.peek_kind() {
             Some(TokenKind::Ident(name)) => {
                 let span = self.current_span();
-                let ident = Ident { name: name.clone(), span };
+                let ident = Ident { name: name.to_string(), span };
                 self.advance();
                 Ok(ident)
             }
-            Some(ref other) => Err(self.err(format!("expected identifier, found {}", other))),
+            Some(other) => Err(self.err(format!("expected identifier, found {}", other))),
             None => Err(self.err("expected identifier, found EOF")),
         }
     }

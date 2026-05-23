@@ -1,4 +1,5 @@
 use std::fmt;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Span {
@@ -55,11 +56,11 @@ pub enum TokenKind {
     // Literals
     Int(i64),
     Float(f64),
-    String(String),
+    String(Arc<str>),
     Char(char),
 
     // Identifier
-    Ident(String),
+    Ident(Arc<str>),
 
     // Operators
     Plus,
