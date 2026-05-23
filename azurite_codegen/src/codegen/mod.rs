@@ -41,6 +41,7 @@ pub struct CodeGen<'ctx> {
     pub jmp_buf: Option<PointerValue<'ctx>>,
     pub err_ptr: Option<PointerValue<'ctx>>,
     pub caught_flag: Option<PointerValue<'ctx>>,
+    pub try_end_bb: Option<BasicBlock<'ctx>>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -65,6 +66,7 @@ impl<'ctx> CodeGen<'ctx> {
             jmp_buf: None,
             err_ptr: None,
             caught_flag: None,
+            try_end_bb: None,
         }
     }
 
@@ -339,29 +341,34 @@ impl<'ctx> CodeGen<'ctx> {
                 let i64_ty = self.context.i64_type();
                 let ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
 
-                // Flag: was throw called?
+                // Allocate caught flag (i64) and error pointer
                 let caught_flag = self.create_entry_alloca(i64_ty.into(), "__caught");
                 self.builder.build_store(caught_flag, i64_ty.const_zero()).unwrap();
-                // Error value storage
                 let err_alloca = self.create_entry_alloca(ptr_ty.into(), "__err");
                 self.builder.build_store(err_alloca, ptr_ty.const_null()).unwrap();
 
-                self.jmp_buf = None;
-                self.err_ptr = Some(err_alloca);
-                self.caught_flag = Some(caught_flag);
-
-                // Execute the try block completely
-                self.compile_block_stmts(try_block, false)?;
-
-                // After try: check if caught
                 let cf = self.function.unwrap();
+                let try_bb = self.context.append_basic_block(cf, "try_body");
                 let catch_bb = self.context.append_basic_block(cf, "catch_body");
                 let merge_bb = self.context.append_basic_block(cf, "try_merge");
-                if !self.has_terminator() {
-                    let flag_val = self.builder.build_load(i64_ty, caught_flag, "flag").unwrap().into_int_value();
-                    let is_caught = self.builder.build_int_compare(inkwell::IntPredicate::NE, flag_val, i64_ty.const_zero(), "is_caught").unwrap();
-                    self.builder.build_conditional_branch(is_caught, catch_bb, merge_bb).unwrap();
-                }
+                let after_try_bb = self.context.append_basic_block(cf, "after_try");
+
+                // Store try_end_bb so throw can jump to it
+                self.err_ptr = Some(err_alloca);
+                self.caught_flag = Some(caught_flag);
+                self.try_end_bb = Some(after_try_bb);
+
+                // Enter try block
+                self.builder.build_unconditional_branch(try_bb).unwrap();
+                self.builder.position_at_end(try_bb);
+                self.compile_block_stmts(try_block, false)?;
+                if !self.has_terminator() { self.builder.build_unconditional_branch(after_try_bb).unwrap(); }
+
+                // After try: check caught flag
+                self.builder.position_at_end(after_try_bb);
+                let flag_val = self.builder.build_load(i64_ty, caught_flag, "flag").unwrap().into_int_value();
+                let is_caught = self.builder.build_int_compare(inkwell::IntPredicate::NE, flag_val, i64_ty.const_zero(), "is_caught").unwrap();
+                self.builder.build_conditional_branch(is_caught, catch_bb, merge_bb).unwrap();
 
                 // Catch block
                 self.builder.position_at_end(catch_bb);
@@ -375,6 +382,7 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder.position_at_end(merge_bb);
                 self.err_ptr = None;
                 self.caught_flag = None;
+                self.try_end_bb = None;
                 Ok(Some(i64_ty.const_zero().into()))
             }
             Stmt::Throw { value } => {
@@ -386,6 +394,10 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 if let Some(cf) = self.caught_flag {
                     self.builder.build_store(cf, i64_ty.const_int(1, false)).unwrap();
+                }
+                // Jump to after the try block (skip remaining try body)
+                if let Some(te) = self.try_end_bb {
+                    self.builder.build_unconditional_branch(te).unwrap();
                 }
 
                 Ok(Some(i64_ty.const_zero().into()))
