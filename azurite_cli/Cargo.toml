@@ -16,6 +16,7 @@ azurite_errors = { path = "../azurite_errors" }
 azurite_resolver = { path = "../azurite_resolver" }
 inkwell = { version = "0.9", optional = true, default-features = false, features = ["llvm22-1", "target-x86", "target-arm", "target-aarch64"] }
 clap = { version = "4", features = ["derive"] }
+rustyline = "15"
 
 [features]
 default = []

@@ -11,6 +11,7 @@ use azurite_lexer::Lexer;
 use azurite_parser::ast::{Program, Stmt};
 use azurite_parser::Parser;
 use azurite_resolver::{find_dep_entry, parse_manifest, resolve_dependencies, DepMap};
+use rustyline::config::Configurer;
 
 #[cfg(feature = "llvm")]
 use inkwell::context::Context;
@@ -65,35 +66,75 @@ fn main() {
 }
 
 fn cmd_repl() -> Result<(), String> {
-    eprintln!("AzuriteLang REPL (type 'exit' to quit)");
-    let mut input = String::new();
+    let completions = vec![
+        "let", "func", "if", "else", "while", "for", "in", "match", "return",
+        "break", "continue", "import", "class", "enum", "true", "false", "null",
+        "and", "or", "not", "self", "super", "int", "float", "string", "bool", "void",
+        "print", "len", "chr", "sqrt", "abs", "int", "float",
+        "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+        "sinh", "cosh", "tanh", "exp", "expm1", "log", "log2", "log10",
+        "pow", "hypot", "fmod", "copysign", "floor", "ceil",
+        "char_at", "read", "input", "exit", "rand", "srand",
+    ];
+
+    struct AzCompleter(Vec<String>);
+    impl rustyline::completion::Completer for AzCompleter {
+        type Candidate = String;
+        fn complete(&self, line: &str, pos: usize, _ctx: &rustyline::Context<'_>) -> rustyline::Result<(usize, Vec<String>)> {
+            let prefix = &line[..pos];
+            let word = prefix.split(|c: char| !c.is_alphanumeric() && c != '_').last().unwrap_or("");
+            let matches: Vec<String> = self.0.iter()
+                .filter(|c| c.starts_with(word))
+                .cloned()
+                .collect();
+            let start = pos - word.len();
+            Ok((start, matches))
+        }
+    }
+    impl rustyline::hint::Hinter for AzCompleter { type Hint = String; fn hint(&self, _: &str, _: usize, _: &rustyline::Context<'_>) -> Option<String> { None } }
+    impl rustyline::highlight::Highlighter for AzCompleter {}
+    impl rustyline::validate::Validator for AzCompleter {}
+    impl rustyline::Helper for AzCompleter {}
+
+    let mut rl = rustyline::Editor::<AzCompleter, _>::new().map_err(|e| e.to_string())?;
+    rl.set_max_history_size(500).ok();
+    rl.set_helper(Some(AzCompleter(completions.iter().map(|s| s.to_string()).collect())));
+
+    eprintln!("AzuriteLang REPL (Ctrl+C or 'exit' to quit)");
+
     loop {
-        input.clear();
-        eprint!("> ");
-        use std::io::Write;
-        std::io::stdout().flush().ok();
-        let read = std::io::stdin().read_line(&mut input);
-        if read.is_err() || read.unwrap_or(0) == 0 { break; }
-        let trimmed = input.trim();
-        if trimmed == "exit" || trimmed.is_empty() { if trimmed == "exit" { break; } continue; }
-        match Lexer::new(trimmed).tokenize() {
-            Ok(tokens) => {
-                let kinds: Vec<String> = tokens.iter().map(|t| t.kind.to_string()).collect();
-                println!("  tokens: {}", kinds.join(" "));
-                match Parser::new(tokens).parse_program() {
-                    Ok(prog) => {
-                        let mut checker = Checker::new();
-                        match checker.check_program(&prog) {
-                            Ok(()) => println!("  OK"),
-                            Err(errs) => {
-                                for err in &errs { eprintln!("  type error: {}", err.message); }
+        let read = rl.readline("> ");
+        match read {
+            Ok(line) => {
+                let trimmed = line.trim();
+                if trimmed == "exit" || trimmed.is_empty() { if trimmed == "exit" { break; } continue; }
+                rl.add_history_entry(&line).map_err(|e| e.to_string())?;
+
+                match Lexer::new(trimmed).tokenize() {
+                    Ok(tokens) => {
+                        let kinds: Vec<String> = tokens.iter().map(|t| t.kind.to_string()).collect();
+                        println!("  tokens: {}", kinds.join(" "));
+                        match Parser::new(tokens).parse_program() {
+                            Ok(prog) => {
+                                let mut checker = Checker::new();
+                                match checker.check_program(&prog) {
+                                    Ok(()) => println!("  OK"),
+                                    Err(errs) => {
+                                        for err in &errs { eprintln!("  type error: {}", err.message); }
+                                    }
+                                }
                             }
+                            Err(e) => eprintln!("  parse error: {}", e.message),
                         }
                     }
-                    Err(e) => eprintln!("  parse error: {}", e.message),
+                    Err(e) => eprintln!("  lex error: {}", e),
                 }
             }
-            Err(e) => eprintln!("  lex error: {}", e),
+            Err(rustyline::error::ReadlineError::Interrupted) => {
+                eprintln!("exit");
+                break;
+            }
+            Err(_) => break,
         }
     }
     Ok(())
