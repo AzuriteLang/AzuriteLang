@@ -33,6 +33,21 @@ pub fn compile_control<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<Basi
             }
             Ok(cg.context.i64_type().const_zero().into())
         }
+        Expr::Tuple(elems) => {
+            let i64_ty = cg.context.i64_type();
+            let count = elems.len() as u32;
+            if count == 0 { return Ok(i64_ty.const_zero().into()); }
+            let struct_ty = cg.context.opaque_struct_type("__tuple");
+            let field_types: Vec<inkwell::types::BasicTypeEnum> = vec![i64_ty.into(); count as usize];
+            struct_ty.set_body(&field_types, false);
+            let alloca = cg.builder.build_alloca(struct_ty, "tuple").unwrap();
+            for (i, elem) in elems.iter().enumerate() {
+                let val = cg.compile_expr(elem)?;
+                let ptr = cg.builder.build_struct_gep(struct_ty, alloca, i as u32, "field").unwrap();
+                cg.builder.build_store(ptr, val).unwrap();
+            }
+            Ok(alloca.into())
+        }
         _ => unreachable!(),
     }
 }

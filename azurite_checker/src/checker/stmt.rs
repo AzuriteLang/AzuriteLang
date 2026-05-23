@@ -123,5 +123,26 @@ pub fn check_stmt(c: &mut Checker, stmt: &Stmt) -> Option<Type> {
             None
         }
         Stmt::Expr(expr) => super::expr::check_expr(c, expr),
+        Stmt::Destructure { names, value } => {
+            let val_type = super::expr::check_expr(c, value);
+            match val_type {
+                Some(Type::Tuple(types)) => {
+                    if types.len() != names.len() {
+                        c.error(value.span(), format!("tuple has {} elements, but {} names given", types.len(), names.len()));
+                    }
+                    for (i, name) in names.iter().enumerate() {
+                        let t = types.get(i).cloned().unwrap_or(Type::Void);
+                        c.scope.insert(&name.name, Symbol { name: name.name.clone(), kind: SymbolKind::Variable, type_: t })
+                            .unwrap_or_else(|e| c.error(name.span, e));
+                    }
+                    Some(Type::Void)
+                }
+                Some(other) => {
+                    c.error(value.span(), format!("cannot destructure '{}'", other));
+                    None
+                }
+                None => None,
+            }
+        }
     }
 }

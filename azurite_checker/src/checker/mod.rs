@@ -100,6 +100,10 @@ impl Checker {
             azurite_parser::ast::Type::Generic { name, params } => {
                 self.create_concrete_from_generic(name, params)
             }
+            azurite_parser::ast::Type::Tuple(types) => {
+                let resolved: Vec<Type> = types.iter().filter_map(|t| self.resolve_type(t)).collect();
+                if resolved.len() == types.len() { Some(Type::Tuple(resolved)) } else { None }
+            }
             _ => None,
         }
     }

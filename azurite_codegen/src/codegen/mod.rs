@@ -89,8 +89,9 @@ impl<'ctx> CodeGen<'ctx> {
                 let is_void = return_type.is_none() || matches!(return_type, Some(azurite_parser::ast::Type::Name(ref n)) if n == "void" || n == "none");
                 let ret_is_string = matches!(return_type, Some(azurite_parser::ast::Type::Name(ref n)) if n == "string");
                 let ret_is_float = matches!(return_type, Some(azurite_parser::ast::Type::Name(ref n)) if n == "float");
+                let ret_is_tuple = matches!(return_type, Some(azurite_parser::ast::Type::Tuple(_)));
                 let ret_name = return_type.as_ref().and_then(|t| if let azurite_parser::ast::Type::Name(n) = t { Some(n.as_str()) } else { None });
-                let ret_is_instance = !is_void && !ret_is_string && !ret_is_float && ret_name.map_or(false, |n| n != "int" && n != "bool");
+                let ret_is_instance = !is_void && !ret_is_string && !ret_is_float && !ret_is_tuple && ret_name.map_or(false, |n| n != "int" && n != "bool");
 
                 let param_types: Vec<BasicMetadataTypeEnum> = params.iter()
                     .map(|p| self.az_param_type(&p.type_annotation))
@@ -99,7 +100,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let fn_val = if is_void {
                     let ft = self.context.void_type().fn_type(&param_types, false);
                     self.module.add_function(&name.name, ft, None)
-                } else if ret_is_string || ret_is_instance {
+                } else if ret_is_string || ret_is_instance || ret_is_tuple {
                     let ft = self.context.ptr_type(inkwell::AddressSpace::default()).fn_type(&param_types, false);
                     self.module.add_function(&name.name, ft, None)
                 } else if ret_is_float {
@@ -128,7 +129,7 @@ impl<'ctx> CodeGen<'ctx> {
                     if is_void {
                         self.builder.build_return(None).unwrap();
                     } else if let Some(v) = last_val {
-                        if ret_is_string || ret_is_instance {
+                        if ret_is_string || ret_is_instance || ret_is_tuple {
                             self.builder.build_return(Some(&v)).unwrap();
                         } else if ret_is_float {
                             match v {
@@ -144,7 +145,7 @@ impl<'ctx> CodeGen<'ctx> {
                     } else if ret_is_float {
                         let f0: BasicValueEnum = self.context.f64_type().const_float(0.0).into();
                         self.builder.build_return(Some(&f0)).unwrap();
-                    } else if ret_is_instance {
+                    } else if ret_is_instance || ret_is_tuple {
                         let null_ptr: BasicValueEnum = self.context.ptr_type(inkwell::AddressSpace::default()).const_zero().into();
                         self.builder.build_return(Some(&null_ptr)).unwrap();
                     } else {
@@ -288,6 +289,19 @@ impl<'ctx> CodeGen<'ctx> {
                 let val = self.compile_expr(expr)?;
                 Ok(Some(val))
             }
+            Stmt::Destructure { names, value } => {
+                let val = self.compile_expr(value)?;
+                let ptr = val.into_pointer_value();
+                let i64_ty = self.context.i64_type();
+                for (i, name) in names.iter().enumerate() {
+                    let gep = unsafe { self.builder.build_gep(i64_ty, ptr, &[self.context.i32_type().const_int(i as u64, false)], &name.name).unwrap() };
+                    let loaded = self.builder.build_load(i64_ty, gep, &name.name).unwrap();
+                    let alloca = self.create_entry_alloca(i64_ty.into(), &name.name);
+                    self.builder.build_store(alloca, loaded).unwrap();
+                    self.variables.insert(name.name.clone(), (alloca, i64_ty.into()));
+                }
+                Ok(Some(val))
+            }
             Stmt::If { condition, then_branch, else_branch } => {
                 let cond = self.compile_expr(condition)?;
                 let cond_int = self.to_bool(cond);
@@ -409,6 +423,9 @@ impl<'ctx> CodeGen<'ctx> {
             azurite_parser::ast::Type::Name(n) if n == "float" => self.context.f64_type().into(),
             azurite_parser::ast::Type::Name(n) if n == "bool" => self.context.i64_type().into(),
             azurite_parser::ast::Type::Name(n) if self.struct_types.contains_key(n) => {
+                self.context.ptr_type(inkwell::AddressSpace::default()).into()
+            }
+            azurite_parser::ast::Type::Tuple(_) => {
                 self.context.ptr_type(inkwell::AddressSpace::default()).into()
             }
             _ => self.context.i64_type().into(),

@@ -6,6 +6,7 @@ pub enum Type {
     Generic { name: String, params: Vec<Type> },
     Ptr(Box<Type>),
     Array(Box<Type>, Option<usize>),
+    Tuple(Vec<Type>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -81,6 +81,7 @@ pub enum Expr {
         condition: Box<Expr>,
         body: Box<Expr>,
     },
+    Tuple(Vec<Expr>),
 }
 
 impl Expr {
@@ -100,6 +101,7 @@ impl Expr {
             Expr::Range { start, .. } => start.span(),
             Expr::EnumVariant { args, .. } => args.first().map(|a| a.span()).unwrap_or(azurite_lexer::Span::new(0, 0, 0, 0)),
             Expr::Array(items) => items.first().map(|a| a.span()).unwrap_or(azurite_lexer::Span::new(0, 0, 0, 0)),
+            Expr::Tuple(items) => items.first().map(|a| a.span()).unwrap_or(azurite_lexer::Span::new(0, 0, 0, 0)),
             _ => azurite_lexer::Span::new(0, 0, 0, 0),
         }
     }

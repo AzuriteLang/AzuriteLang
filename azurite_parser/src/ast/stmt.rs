@@ -55,6 +55,10 @@ pub enum Stmt {
         span: azurite_lexer::Span,
     },
     Expr(Expr),
+    Destructure {
+        names: Vec<Ident>,
+        value: Box<Expr>,
+    },
 }
 
 impl Stmt {
@@ -72,6 +76,7 @@ impl Stmt {
             Stmt::While { condition, .. } => condition.span(),
             Stmt::For { name, .. } => name.span,
             Stmt::Expr(e) => e.span(),
+            Stmt::Destructure { value, .. } => value.span(),
         }
     }
 }

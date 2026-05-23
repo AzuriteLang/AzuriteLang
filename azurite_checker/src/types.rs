@@ -14,6 +14,7 @@ pub enum Type {
         params: Vec<Type>,
         ret: Box<Type>,
     },
+    Tuple(Vec<Type>),
 }
 
 impl fmt::Display for Type {
@@ -30,6 +31,10 @@ impl fmt::Display for Type {
             Type::Func { params, ret } => {
                 let params: Vec<String> = params.iter().map(|p| p.to_string()).collect();
                 write!(f, "func({}) -> {}", params.join(", "), ret)
+            }
+            Type::Tuple(types) => {
+                let ts: Vec<String> = types.iter().map(|t| t.to_string()).collect();
+                write!(f, "({})", ts.join(", "))
             }
         }
     }

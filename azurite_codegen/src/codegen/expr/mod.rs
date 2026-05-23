@@ -14,7 +14,7 @@ pub fn compile_expr<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
             => literal::compile_literal(cg, expr),
         Expr::Binary { .. } | Expr::Unary { .. } => operator::compile_operator(cg, expr),
         Expr::Call { .. } | Expr::MethodCall { .. } => call::compile_call(cg, expr),
-        Expr::If { .. } | Expr::While { .. } | Expr::Match { .. } | Expr::Block(_) | Expr::Array(_) | Expr::Index { .. } | Expr::Range { .. } | Expr::EnumVariant { .. } | Expr::FieldAccess { .. }
+        Expr::If { .. } | Expr::While { .. } | Expr::Match { .. } | Expr::Block(_) | Expr::Array(_) | Expr::Index { .. } | Expr::Range { .. } | Expr::EnumVariant { .. } | Expr::FieldAccess { .. } | Expr::Tuple(_)
             => control::compile_control(cg, expr),
         Expr::Ident(ident) => {
             if ident.name == "self" {

@@ -24,6 +24,19 @@ pub fn parse_type(p: &mut Parser) -> Result<Type, AzError> {
                 Ok(Type::Name(name))
             }
         }
+        Some(TokenKind::LParen) => {
+            p.advance();
+            let mut types = Vec::new();
+            loop {
+                match p.peek_kind() {
+                    Some(TokenKind::RParen) | None => break,
+                    Some(TokenKind::Comma) => { p.advance(); }
+                    _ => { types.push(parse_type(p)?); }
+                }
+            }
+            p.expect(TokenKind::RParen, "')'")?;
+            Ok(Type::Tuple(types))
+        }
         _ => Err(p.err(format!("expected type, found {}", p.peek_kind().unwrap()))),
     }
 }

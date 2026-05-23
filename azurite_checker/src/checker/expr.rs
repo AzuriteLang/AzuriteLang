@@ -194,6 +194,10 @@ pub fn check_expr(c: &mut Checker, expr: &Expr) -> Option<Type> {
             c.in_loop -= 1;
             Some(Type::Void)
         }
+        Expr::Tuple(elems) => {
+            let types: Vec<Type> = elems.iter().filter_map(|e| check_expr(c, e)).collect();
+            if types.len() == elems.len() { Some(Type::Tuple(types)) } else { None }
+        }
     }
 }
 

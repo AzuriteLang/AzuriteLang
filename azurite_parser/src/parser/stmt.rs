@@ -36,15 +36,33 @@ pub fn parse_stmt(p: &mut Parser) -> Result<Stmt, AzError> {
 
 fn parse_let(p: &mut Parser) -> Result<Stmt, AzError> {
     p.advance();
-    let name = p.parse_ident()?;
-    let type_annotation = if p.peek_kind() == Some(TokenKind::Colon) {
+    if p.peek_kind() == Some(TokenKind::LParen) {
         p.advance();
-        Some(super::type_::parse_type(p)?)
-    } else { None };
-    p.expect(TokenKind::Assign, "expected '=' in let declaration")?;
-    let value = expr::parse_expr(p, 0)?;
-    p.expect_semicolon()?;
-    Ok(Stmt::Let { name, type_annotation, value: Box::new(value) })
+        let mut names = Vec::new();
+        loop {
+            match p.peek_kind() {
+                Some(TokenKind::RParen) => { p.advance(); break; }
+                Some(TokenKind::Comma) => { p.advance(); }
+                Some(TokenKind::Ident(_)) => { names.push(p.parse_ident()?); }
+                Some(other) => return Err(p.err(format!("expected identifier or ')', found {}", other))),
+                None => return Err(p.err("expected identifier or ')'")),
+            }
+        }
+        p.expect(TokenKind::Assign, "expected '=' in let destructure")?;
+        let value = expr::parse_expr(p, 0)?;
+        p.expect_semicolon()?;
+        Ok(Stmt::Destructure { names, value: Box::new(value) })
+    } else {
+        let name = p.parse_ident()?;
+        let type_annotation = if p.peek_kind() == Some(TokenKind::Colon) {
+            p.advance();
+            Some(super::type_::parse_type(p)?)
+        } else { None };
+        p.expect(TokenKind::Assign, "expected '=' in let declaration")?;
+        let value = expr::parse_expr(p, 0)?;
+        p.expect_semicolon()?;
+        Ok(Stmt::Let { name, type_annotation, value: Box::new(value) })
+    }
 }
 
 fn parse_func(p: &mut Parser) -> Result<Stmt, AzError> {

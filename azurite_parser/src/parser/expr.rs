@@ -19,7 +19,7 @@ pub fn parse_expr(p: &mut Parser, min_bp: u8) -> Result<Expr, AzError> {
             p.advance();
             Expr::Ident(ident)
         }
-        Some(TokenKind::LParen) => { p.advance(); let e = parse_expr(p, 0)?; p.expect(TokenKind::RParen, "')'")?; e }
+        Some(TokenKind::LParen) => { p.advance(); let e = parse_expr(p, 0)?; if p.peek_kind() == Some(TokenKind::Comma) { let mut elems = vec![e]; while p.peek_kind() == Some(TokenKind::Comma) { p.advance(); if p.peek_kind() == Some(TokenKind::RParen) { break; } elems.push(parse_expr(p, 0)?); } p.expect(TokenKind::RParen, "')'")?; Expr::Tuple(elems) } else { p.expect(TokenKind::RParen, "')'")?; e } }
         Some(TokenKind::LBrace) => parse_block(p)?,
         Some(TokenKind::LBracket) => parse_array(p)?,
         Some(TokenKind::If) => parse_if(p)?,
