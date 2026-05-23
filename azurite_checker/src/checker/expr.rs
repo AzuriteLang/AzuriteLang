@@ -166,7 +166,7 @@ pub fn check_expr(c: &mut Checker, expr: &Expr) -> Option<Type> {
                 None => None,
             }
         }
-        Expr::Slice { obj, start, end } => {
+        Expr::Slice { obj, start, end, .. } => {
             check_expr(c, start);
             check_expr(c, end);
             let obj_type = check_expr(c, obj);

@@ -15,7 +15,7 @@ pub fn compile_control<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<Basi
         }
         Expr::Array(elems) => compile_array(cg, elems),
         Expr::Index { obj, index } => compile_index(cg, obj, index),
-        Expr::Slice { obj, start, end } => compile_slice(cg, obj, start, end),
+        Expr::Slice { obj, start, end, end_is_len } => compile_slice(cg, obj, start, end, *end_is_len),
         Expr::Range { start, end } => { let _ = cg.compile_expr(start)?; cg.compile_expr(end) }
         Expr::EnumVariant { variant, .. } => {
             let tag = variant.as_bytes().iter().fold(0u64, |acc, b| acc.wrapping_add(*b as u64));
@@ -202,40 +202,104 @@ fn compile_index<'ctx>(cg: &mut CodeGen<'ctx>, obj: &Expr, index: &Expr) -> Resu
     Ok(cg.builder.build_load(cg.context.i64_type(), elem, "loaded").unwrap())
 }
 
-fn compile_slice<'ctx>(cg: &mut CodeGen<'ctx>, obj: &Expr, start: &Expr, end: &Expr) -> Result<BasicValueEnum<'ctx>, AzError> {
+fn compile_slice<'ctx>(cg: &mut CodeGen<'ctx>, obj: &Expr, start: &Expr, end: &Expr, end_is_len: bool) -> Result<BasicValueEnum<'ctx>, AzError> {
     let obj_val = cg.compile_expr(obj)?;
-    let start_val = cg.compile_expr(start)?.into_int_value();
-    let end_val = cg.compile_expr(end)?.into_int_value();
-    let i64_ty = cg.context.i64_type();
+    let ptr = obj_val.into_pointer_value();
     let i64_ty = cg.context.i64_type();
     let i8_ty = cg.context.i8_type();
-    let cf = cg.function.unwrap();
-    let len = cg.builder.build_int_sub(end_val, start_val, "slicelen").unwrap();
-    let new_ptr = cg.builder.build_array_malloc(i64_ty, len, "slice").unwrap();
+    let i64_zero = i64_ty.const_zero();
 
-    // Copy elements from obj + start to new_ptr
+    // Get the total length (strlen for strings)
+    if cg.module.get_function("strlen").is_none() {
+        let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
+        let ft = i64_ty.fn_type(&[ptr_ty.into()], false);
+        cg.module.add_function("strlen", ft, None);
+    }
+    let total_len = cg.builder.build_call(
+        cg.module.get_function("strlen").unwrap(), &[ptr.into()], "tlen"
+    ).unwrap().try_as_basic_value().unwrap_basic().into_int_value();
+
+    // Compile start and end expressions
+    let raw_start = cg.compile_expr(start)?.into_int_value();
+    let raw_end = if end_is_len {
+        total_len // "to end" → uses the full string length
+    } else {
+        cg.compile_expr(end)?.into_int_value()
+    };
+
+    // Adjust negative indices: if raw < 0, add total_len
+    let sn = cg.builder.build_int_compare(inkwell::IntPredicate::SLT, raw_start, i64_zero, "sn").unwrap();
+    let sa = cg.builder.build_int_add(total_len, raw_start, "sa").unwrap();
+    let adj_start = cg.builder.build_select(sn, sa, raw_start, "as").unwrap();
+
+    let en = cg.builder.build_int_compare(inkwell::IntPredicate::SLT, raw_end, i64_zero, "en").unwrap();
+    let ea = cg.builder.build_int_add(total_len, raw_end, "ea").unwrap();
+    let adj_end = cg.builder.build_select(en, ea, raw_end, "ae").unwrap();
+
+    // Clamp to valid range
+    let as_i = adj_start.into_int_value();
+    let ae_i = adj_end.into_int_value();
+    let lt_s = cg.builder.build_int_compare(inkwell::IntPredicate::SLT, as_i, i64_zero, "lts").unwrap();
+    let cs = cg.builder.build_select(lt_s, i64_zero, as_i, "cs").unwrap().into_int_value();
+    let gt_s = cg.builder.build_int_compare(inkwell::IntPredicate::SGT, cs, total_len, "gts").unwrap();
+    let clamped_start = cg.builder.build_select(gt_s, total_len, cs, "cs2").unwrap().into_int_value();
+    let lt_e = cg.builder.build_int_compare(inkwell::IntPredicate::SLT, ae_i, i64_zero, "lte").unwrap();
+    let ce = cg.builder.build_select(lt_e, i64_zero, ae_i, "ce").unwrap().into_int_value();
+    let gt_e = cg.builder.build_int_compare(inkwell::IntPredicate::SGT, ce, total_len, "gte").unwrap();
+    let clamped_end = cg.builder.build_select(gt_e, total_len, ce, "ce2").unwrap().into_int_value();
+
+    // Compute slice length
+    let len = cg.builder.build_int_sub(clamped_end, clamped_start, "slen").unwrap();
+    // Ensure positive
+    let len_pos = cg.builder.build_select(
+        cg.builder.build_int_compare(inkwell::IntPredicate::SLT, len, i64_zero, "lz").unwrap(),
+        i64_zero, len, "lp"
+    ).unwrap().into_int_value();
+
+    // Allocate result buffer (i8 for strings)
+    let buf = cg.builder.build_array_malloc(i8_ty, len_pos, "slice").unwrap();
+    // Handle zero-length slice
+    let zero_len = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, len_pos, i64_zero, "zl").unwrap();
     let cf = cg.function.unwrap();
-    let cond_bb = cg.context.append_basic_block(cf, "slice_cond");
-    let body_bb = cg.context.append_basic_block(cf, "slice_body");
-    let after_bb = cg.context.append_basic_block(cf, "slice_after");
+    let copy_bb = cg.context.append_basic_block(cf, "sc_copy");
+    let skip_bb = cg.context.append_basic_block(cf, "sc_skip");
+    let merge_bb = cg.context.append_basic_block(cf, "sc_end");
+    cg.builder.build_conditional_branch(zero_len, skip_bb, copy_bb).unwrap();
+
+    // Copy loop
+    cg.builder.position_at_end(copy_bb);
     let i_ptr = cg.create_entry_alloca(i64_ty.into(), "__si");
-    cg.builder.build_store(i_ptr, i64_ty.const_zero()).unwrap();
+    cg.builder.build_store(i_ptr, i64_zero).unwrap();
 
+    let cond_bb = cg.context.append_basic_block(cf, "sl_cond");
+    let body_bb = cg.context.append_basic_block(cf, "sl_body");
+    let done_bb = cg.context.append_basic_block(cf, "sl_done");
     cg.builder.build_unconditional_branch(cond_bb).unwrap();
+
     cg.builder.position_at_end(cond_bb);
-    let i = cg.builder.build_load(i64_ty, i_ptr, "__si").unwrap().into_int_value();
-    let cmp = cg.builder.build_int_compare(inkwell::IntPredicate::SLT, i, len, "scmp").unwrap();
-    cg.builder.build_conditional_branch(cmp, body_bb, after_bb).unwrap();
-    cg.builder.position_at_end(body_bb);
-    let src_idx = cg.builder.build_int_add(i, start_val, "srcidx").unwrap();
-    let src_gep = unsafe { cg.builder.build_gep(i64_ty, obj_val.into_pointer_value(), &[src_idx], "srcelem").unwrap() };
-    let src_val = cg.builder.build_load(i64_ty, src_gep, "loaded").unwrap();
-    let dst_gep = unsafe { cg.builder.build_gep(i64_ty, new_ptr, &[i], "dstelem").unwrap() };
-    cg.builder.build_store(dst_gep, src_val).unwrap();
-    let i_next = cg.builder.build_int_add(i, i64_ty.const_int(1, false), "inc").unwrap();
-    cg.builder.build_store(i_ptr, i_next).unwrap();
-    cg.builder.build_unconditional_branch(cond_bb).unwrap();
-    cg.builder.position_at_end(after_bb);
+    let ci = cg.builder.build_load(i64_ty, i_ptr, "ci").unwrap().into_int_value();
+    let cc = cg.builder.build_int_compare(inkwell::IntPredicate::SLT, ci, len_pos, "cc").unwrap();
+    cg.builder.build_conditional_branch(cc, body_bb, done_bb).unwrap();
 
-    Ok(new_ptr.into())
+    cg.builder.position_at_end(body_bb);
+    let ci2 = cg.builder.build_load(i64_ty, i_ptr, "ci2").unwrap().into_int_value();
+    let src_idx = cg.builder.build_int_add(ci2, clamped_start, "si").unwrap();
+    let src_g = unsafe { cg.builder.build_gep(i8_ty, ptr, &[src_idx], "sg").unwrap() };
+    let sv = cg.builder.build_load(i8_ty, src_g, "sv").unwrap();
+    let dst_g = unsafe { cg.builder.build_gep(i8_ty, buf, &[ci2], "dg").unwrap() };
+    cg.builder.build_store(dst_g, sv).unwrap();
+    let ni = cg.builder.build_int_add(ci2, i64_ty.const_int(1, false), "ni").unwrap();
+    cg.builder.build_store(i_ptr, ni).unwrap();
+    cg.builder.build_unconditional_branch(cond_bb).unwrap();
+
+    cg.builder.position_at_end(done_bb);
+    cg.builder.build_unconditional_branch(merge_bb).unwrap();
+    cg.builder.position_at_end(skip_bb);
+    cg.builder.build_unconditional_branch(merge_bb).unwrap();
+    cg.builder.position_at_end(merge_bb);
+    // Null-terminate
+    let ng = unsafe { cg.builder.build_gep(i8_ty, buf, &[len_pos], "ng").unwrap() };
+    cg.builder.build_store(ng, i8_ty.const_zero()).unwrap();
+
+    Ok(buf.into())
 }

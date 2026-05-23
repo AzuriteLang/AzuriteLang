@@ -58,15 +58,29 @@ pub fn parse_expr(p: &mut Parser, min_bp: u8) -> Result<Expr, AzError> {
             }
             Some(TokenKind::LBracket) => {
                 p.advance();
-                let inner = parse_expr(p, 0)?;
                 if p.peek_kind() == Some(TokenKind::Colon) {
+                    // Slice with omitted start: [expr:]
                     p.advance();
                     let end = parse_expr(p, 0)?;
                     p.expect(TokenKind::RBracket, "']'")?;
-                    lhs = Expr::Slice { obj: Box::new(lhs), start: Box::new(inner), end: Box::new(end) };
+                    lhs = Expr::Slice { obj: Box::new(lhs), start: Box::new(Expr::Int(0)), end: Box::new(end), end_is_len: false };
                 } else {
-                    p.expect(TokenKind::RBracket, "']'")?;
-                    lhs = Expr::Index { obj: Box::new(lhs), index: Box::new(inner) };
+                    let inner = parse_expr(p, 0)?;
+                    if p.peek_kind() == Some(TokenKind::Colon) {
+                        p.advance();
+                        if p.peek_kind() == Some(TokenKind::RBracket) {
+                            // Omitted end: [start:]
+                            p.advance();
+                            lhs = Expr::Slice { obj: Box::new(lhs), start: Box::new(inner), end: Box::new(Expr::Int(0)), end_is_len: true };
+                        } else {
+                            let end = parse_expr(p, 0)?;
+                            p.expect(TokenKind::RBracket, "']'")?;
+                            lhs = Expr::Slice { obj: Box::new(lhs), start: Box::new(inner), end: Box::new(end), end_is_len: false };
+                        }
+                    } else {
+                        p.expect(TokenKind::RBracket, "']'")?;
+                        lhs = Expr::Index { obj: Box::new(lhs), index: Box::new(inner) };
+                    }
                 }
             }
             Some(TokenKind::Dot) | Some(TokenKind::QuestionDot) => {

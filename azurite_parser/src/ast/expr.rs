@@ -69,6 +69,7 @@ pub enum Expr {
         obj: Box<Expr>,
         start: Box<Expr>,
         end: Box<Expr>,
+        end_is_len: bool, // true when end is omitted (to end of string)
     },
     Match {
         value: Box<Expr>,
