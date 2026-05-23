@@ -10,7 +10,7 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
         Expr::Call { callee, args } => {
             let callee_name = match callee.as_ref() {
                 Expr::Ident(i) => i.name.clone(),
-                _ => return Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), "invalid callee")),
+                _ => return Err(AzError::new(ErrorKind::Semantic, expr.span(), "invalid callee")),
             };
             match callee_name.as_str() {
                 "print" => return super::super::builtin::compile_print(cg, args),
@@ -58,7 +58,7 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                     _ => cg.context.i64_type().const_zero().into(),
                 })
             } else {
-                Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), format!("undefined '{}'", callee_name)))
+                Err(AzError::new(ErrorKind::Semantic, expr.span(), format!("undefined '{}'", callee_name)))
             }
         }
         Expr::MethodCall { obj, method, args } => {
@@ -255,16 +255,88 @@ fn compile_len<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValue
 }
 
 fn compile_read<'ctx>(cg: &mut CodeGen<'ctx>) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let _buf = cg.builder.build_alloca(cg.context.i64_type(), "buf").unwrap();
-    let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
-    let fgets_ty = ptr_ty.fn_type(&[ptr_ty.into(), cg.context.i64_type().into(), ptr_ty.into()], false);
-    cg.module.add_function("fgets", fgets_ty, None);
-    let empty = cg.builder.build_global_string_ptr("", "empty").unwrap();
-    Ok(empty.as_pointer_value().into())
+    let i64_ty = cg.context.i64_type();
+    let i8_ty = cg.context.i8_type();
+
+    // 1024-byte buffer on the stack
+    let buf = cg.builder.build_array_alloca(i8_ty, i64_ty.const_int(1024, false), "input_buf").unwrap();
+
+    // Declare getchar
+    if cg.module.get_function("getchar").is_none() {
+        let getchar_ty = cg.context.i32_type().fn_type(&[], false);
+        cg.module.add_function("getchar", getchar_ty, None);
+    }
+
+    // Read characters one by one using getchar() in a loop
+    // We need a loop: for i = 0..1023 { c = getchar(); if c == '\n' || c == EOF break; buf[i] = c; }
+    let cf = cg.function.unwrap();
+
+    // Allocate loop variable i
+    let i_ptr = cg.create_entry_alloca(i64_ty.into(), "read_i");
+
+    // Store 0 to i
+    cg.builder.build_store(i_ptr, i64_ty.const_zero()).unwrap();
+
+    // Loop header
+    let loop_cond = cg.context.append_basic_block(cf, "read_cond");
+    let loop_body = cg.context.append_basic_block(cf, "read_body");
+    let loop_end = cg.context.append_basic_block(cf, "read_end");
+    cg.builder.build_unconditional_branch(loop_cond).unwrap();
+    cg.builder.position_at_end(loop_cond);
+
+    let i_val = cg.builder.build_load(i64_ty, i_ptr, "i").unwrap().into_int_value();
+    let cmp = cg.builder.build_int_compare(inkwell::IntPredicate::SLT, i_val, i64_ty.const_int(1023, false), "read_cmp").unwrap();
+    cg.builder.build_conditional_branch(cmp, loop_body, loop_end).unwrap();
+    cg.builder.position_at_end(loop_body);
+    cg.loop_stack.push((loop_cond, loop_end));
+
+    // c = getchar()
+    let c_raw = cg.builder.build_call(
+        cg.module.get_function("getchar").unwrap(),
+        &[], "read_char"
+    ).unwrap().try_as_basic_value().unwrap_basic().into_int_value();
+
+    // Extend i32 to i64 for comparison
+    let c_val = cg.builder.build_int_z_extend(c_raw, i64_ty, "c_ext").unwrap();
+
+    // Check for newline (10) or EOF (-1)
+    let is_nl = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, c_val, i64_ty.const_int(10, false), "is_nl").unwrap();
+    let is_eof = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, c_val, i64_ty.const_int(0xFFFFFFFF, false), "is_eof").unwrap();
+    let should_stop = cg.builder.build_or(is_nl, is_eof, "stop").unwrap();
+    let should_stop_bool = cg.builder.build_int_compare(inkwell::IntPredicate::NE, should_stop, cg.context.bool_type().const_zero(), "stop_chk").unwrap();
+    let after_store = cg.context.append_basic_block(cf, "read_store");
+    cg.builder.build_conditional_branch(should_stop_bool, loop_end, after_store).unwrap();
+    cg.builder.position_at_end(after_store);
+
+    // buf[i] = (i8)c
+    let c_i8 = cg.builder.build_int_truncate(c_raw, i8_ty, "c_i8").unwrap();
+    let i2 = cg.builder.build_load(i64_ty, i_ptr, "i2").unwrap().into_int_value();
+    let gep = unsafe { cg.builder.build_gep(i8_ty, buf, &[i2], "chr_gep").unwrap() };
+    cg.builder.build_store(gep, c_i8).unwrap();
+
+    // i++
+    let i3 = cg.builder.build_load(i64_ty, i_ptr, "i3").unwrap().into_int_value();
+    let i_next = cg.builder.build_int_add(i3, i64_ty.const_int(1, false), "i_next").unwrap();
+    cg.builder.build_store(i_ptr, i_next).unwrap();
+
+    cg.builder.build_unconditional_branch(loop_cond).unwrap();
+    cg.loop_stack.pop();
+    cg.builder.position_at_end(loop_end);
+
+    // Null-terminate: buf[i] = 0
+    let i_final = cg.builder.build_load(i64_ty, i_ptr, "i_final").unwrap().into_int_value();
+    let null_gep = unsafe { cg.builder.build_gep(i8_ty, buf, &[i_final], "null_gep").unwrap() };
+    cg.builder.build_store(null_gep, i8_ty.const_zero()).unwrap();
+
+    Ok(buf.into())
 }
 
 fn compile_input<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let _ = cg.compile_expr(&args[0])?;
+    // Print the prompt first
+    let prompt = cg.compile_expr(&args[0])?;
+    let printf = super::super::builtin::get_or_declare_printf(cg);
+    let fmt = cg.builder.build_global_string_ptr("%s", "promptfmt").unwrap();
+    cg.builder.build_call(printf, &[fmt.as_pointer_value().into(), prompt.into()], "printprompt").unwrap();
     compile_read(cg)
 }
 

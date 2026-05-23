@@ -22,7 +22,7 @@ pub fn compile_literal<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<Basi
                     ).unwrap();
                     Ok(loaded)
                 }
-                None => Err(AzError::new(azurite_errors::ErrorKind::Semantic, azurite_lexer::Span::new(0, 0, 0, 0),
+                None => Err(AzError::new(azurite_errors::ErrorKind::Semantic, expr.span(),
                     "'self' used outside method"))
             }
         }

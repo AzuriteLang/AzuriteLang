@@ -1,5 +1,4 @@
 use azurite_errors::{AzError, ErrorKind};
-use azurite_lexer::Span;
 use azurite_parser::ast::*;
 use inkwell::values::BasicValueEnum;
 use crate::codegen::CodeGen;
@@ -12,7 +11,7 @@ pub fn compile_control<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<Basi
         Expr::Block(stmts) => {
             let mut last = None;
             for stmt in stmts { last = cg.compile_stmt(stmt, false)?.or(last); }
-            last.ok_or_else(|| AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), "empty block"))
+            last.ok_or_else(|| AzError::new(ErrorKind::Semantic, expr.span(), "empty block"))
         }
         Expr::Array(elems) => compile_array(cg, elems),
         Expr::Index { obj, index } => compile_index(cg, obj, index),

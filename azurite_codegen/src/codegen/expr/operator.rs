@@ -8,12 +8,14 @@ use crate::codegen::CodeGen;
 pub fn compile_operator<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicValueEnum<'ctx>, AzError> {
     match expr {
         Expr::Binary { left, op, right } => {
-            if *op == BinOp::Assign { return compile_assign(cg, left, right); }
+            let span = expr.span();
+            if *op == BinOp::Assign { return compile_assign(cg, left, right, expr.span()); }
             let lhs = cg.compile_expr(left)?;
             let rhs = cg.compile_expr(right)?;
-            compile_binary(cg, lhs, rhs, *op)
+            compile_binary(cg, lhs, rhs, *op, span)
         }
         Expr::Unary { op, operand } => {
+            let span = expr.span();
             let val = cg.compile_expr(operand)?;
             match op {
                 UnOp::Neg => {
@@ -25,7 +27,7 @@ pub fn compile_operator<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<Bas
                         BasicValueEnum::FloatValue(f) => {
                             Ok(cg.builder.build_float_neg(f, "negftmp").unwrap().into())
                         }
-                        _ => return Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), "cannot negate this type")),
+                        _ => return Err(AzError::new(ErrorKind::Semantic, span, "cannot negate this type")),
                     }
                 }
                 UnOp::Not => {
@@ -41,7 +43,7 @@ pub fn compile_operator<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<Bas
     }
 }
 
-fn compile_binary<'ctx>(cg: &CodeGen<'ctx>, lhs: BasicValueEnum<'ctx>, rhs: BasicValueEnum<'ctx>, op: BinOp) -> Result<BasicValueEnum<'ctx>, AzError> {
+fn compile_binary<'ctx>(cg: &CodeGen<'ctx>, lhs: BasicValueEnum<'ctx>, rhs: BasicValueEnum<'ctx>, op: BinOp, span: Span) -> Result<BasicValueEnum<'ctx>, AzError> {
     match (lhs, rhs) {
         (BasicValueEnum::IntValue(l), BasicValueEnum::IntValue(r)) => {
             let i64 = cg.context.i64_type();
@@ -85,7 +87,7 @@ fn compile_binary<'ctx>(cg: &CodeGen<'ctx>, lhs: BasicValueEnum<'ctx>, rhs: Basi
                     let cmp = cg.builder.build_float_compare(pred, l, r, "fcmptmp").unwrap();
                     cg.builder.build_int_z_extend(cmp, i64_ty, "fcmpext").unwrap().into()
                 }
-                _ => return Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), "unsupported float op")),
+                _ => return Err(AzError::new(ErrorKind::Semantic, span, "unsupported float op")),
             };
             Ok(val)
         }
@@ -93,7 +95,7 @@ fn compile_binary<'ctx>(cg: &CodeGen<'ctx>, lhs: BasicValueEnum<'ctx>, rhs: Basi
             // String concatenation
             compile_string_concat(cg, l, r)
         }
-        _ => Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), "type mismatch")),
+        _ => Err(AzError::new(ErrorKind::Semantic, span, "type mismatch")),
     }
 }
 
@@ -132,14 +134,14 @@ fn compile_string_concat<'ctx>(cg: &CodeGen<'ctx>, l: inkwell::values::PointerVa
     Ok(buf.into())
 }
 
-fn compile_assign<'ctx>(cg: &mut CodeGen<'ctx>, left: &Expr, right: &Expr) -> Result<BasicValueEnum<'ctx>, AzError> {
+fn compile_assign<'ctx>(cg: &mut CodeGen<'ctx>, left: &Expr, right: &Expr, span: Span) -> Result<BasicValueEnum<'ctx>, AzError> {
     let var_name = match left {
         Expr::Ident(i) => i.name.clone(),
-        _ => return Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), "left side must be a variable")),
+        _ => return Err(AzError::new(ErrorKind::Semantic, span, "left side must be a variable")),
     };
     let rhs = cg.compile_expr(right)?;
     match cg.variables.get(&var_name) {
         Some((ptr, _)) => { cg.builder.build_store(*ptr, rhs).unwrap(); Ok(rhs) }
-        None => Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), format!("undefined '{}'", var_name)))
+        None => Err(AzError::new(ErrorKind::Semantic, span, format!("undefined '{}'", var_name)))
     }
 }
