@@ -40,7 +40,11 @@ pub fn check_stmt(c: &mut Checker, stmt: &Stmt) -> Option<Type> {
                     let resolved_params: Vec<Type> = mparams.iter().filter(|p| p.name.name != "self").map(|p| {
                         p.type_annotation.as_ref().and_then(|t| c.resolve_type(t)).unwrap_or(Type::Void)
                     }).collect();
-                    let resolved_ret = return_type.as_ref().and_then(|t| c.resolve_type(t)).unwrap_or(Type::Void);
+                    let resolved_ret = if mname.name == "new" {
+                        Type::Instance { name: concrete_name.clone() }
+                    } else {
+                        return_type.as_ref().and_then(|t| c.resolve_type(t)).unwrap_or(Type::Void)
+                    };
                     let func_type = Type::Func { params: resolved_params, ret: Box::new(resolved_ret) };
                     let fn_name_clone = fn_name.clone();
                     c.scope.insert(&fn_name, Symbol { name: fn_name_clone, kind: SymbolKind::Function, type_: func_type })

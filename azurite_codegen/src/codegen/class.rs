@@ -100,11 +100,20 @@ fn compile_method<'ctx>(
     }
 
     let is_void = return_type.is_none() || matches!(return_type, Some(Type::Name(ref n)) if n == "void" || n == "none");
+    let ret_is_string = matches!(return_type, Some(Type::Name(ref n)) if n == "string");
+    let ret_is_float = matches!(return_type, Some(Type::Name(ref n)) if n == "float");
+    let ret_is_instance = !is_void && !ret_is_string && !ret_is_float && matches!(return_type, Some(Type::Name(_)));
     let mut param_types: Vec<BasicMetadataTypeEnum> = vec![self_type.into()];
-    for p in params { param_types.push(cg.az_param_type(&p.type_annotation)); }
+    for p in params.iter().filter(|p| p.name.name != "self") { param_types.push(cg.az_param_type(&p.type_annotation)); }
 
     let fn_val = if is_void {
         let ft = cg.context.void_type().fn_type(&param_types, false);
+        cg.module.add_function(&fn_name, ft, None)
+    } else if ret_is_string || ret_is_instance {
+        let ft = cg.context.ptr_type(inkwell::AddressSpace::default()).fn_type(&param_types, false);
+        cg.module.add_function(&fn_name, ft, None)
+    } else if ret_is_float {
+        let ft = cg.context.f64_type().fn_type(&param_types, false);
         cg.module.add_function(&fn_name, ft, None)
     } else {
         let ft = cg.context.i64_type().fn_type(&param_types, false);
@@ -132,10 +141,17 @@ fn compile_method<'ctx>(
         }
     }
 
-    cg.compile_block_stmts(body, true)?;
+    let last_val = cg.compile_block_stmts(body, true)?;
 
     if !cg.has_terminator() {
         if is_void { cg.builder.build_return(None).unwrap(); }
+        else if let Some(v) = last_val {
+            if ret_is_string || ret_is_float || ret_is_instance {
+                cg.builder.build_return(Some(&v)).unwrap();
+            } else {
+                cg.builder.build_return(Some(&cg.any_to_i64(v))).unwrap();
+            }
+        }
         else { cg.builder.build_return(Some(&cg.context.i64_type().const_zero())).unwrap(); }
     }
 

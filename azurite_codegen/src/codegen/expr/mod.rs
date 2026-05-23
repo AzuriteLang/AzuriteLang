@@ -17,6 +17,11 @@ pub fn compile_expr<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
         Expr::If { .. } | Expr::While { .. } | Expr::Match { .. } | Expr::Block(_) | Expr::Array(_) | Expr::Index { .. } | Expr::Range { .. } | Expr::EnumVariant { .. } | Expr::FieldAccess { .. }
             => control::compile_control(cg, expr),
         Expr::Ident(ident) => {
+            if ident.name == "self" {
+                if let Some(sp) = cg.self_ptr {
+                    return Ok(cg.builder.build_load(cg.context.ptr_type(inkwell::AddressSpace::default()), sp, "self").unwrap());
+                }
+            }
             if let Some((ptr, ty)) = cg.variables.get(&ident.name) {
                 Ok(cg.builder.build_load(*ty, *ptr, &ident.name).unwrap())
             } else if let Some(f) = cg.module.get_function(&ident.name) {

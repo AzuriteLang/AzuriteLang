@@ -89,6 +89,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let is_void = return_type.is_none() || matches!(return_type, Some(azurite_parser::ast::Type::Name(ref n)) if n == "void" || n == "none");
                 let ret_is_string = matches!(return_type, Some(azurite_parser::ast::Type::Name(ref n)) if n == "string");
                 let ret_is_float = matches!(return_type, Some(azurite_parser::ast::Type::Name(ref n)) if n == "float");
+                let ret_is_instance = !is_void && !ret_is_string && !ret_is_float && matches!(return_type, Some(azurite_parser::ast::Type::Name(_)));
 
                 let param_types: Vec<BasicMetadataTypeEnum> = params.iter()
                     .map(|p| self.az_param_type(&p.type_annotation))
@@ -97,7 +98,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let fn_val = if is_void {
                     let ft = self.context.void_type().fn_type(&param_types, false);
                     self.module.add_function(&name.name, ft, None)
-                } else if ret_is_string {
+                } else if ret_is_string || ret_is_instance {
                     let ft = self.context.ptr_type(inkwell::AddressSpace::default()).fn_type(&param_types, false);
                     self.module.add_function(&name.name, ft, None)
                 } else if ret_is_float {
@@ -126,7 +127,7 @@ impl<'ctx> CodeGen<'ctx> {
                     if is_void {
                         self.builder.build_return(None).unwrap();
                     } else if let Some(v) = last_val {
-                        if ret_is_string {
+                        if ret_is_string || ret_is_instance {
                             self.builder.build_return(Some(&v)).unwrap();
                         } else if ret_is_float {
                             match v {
@@ -142,6 +143,9 @@ impl<'ctx> CodeGen<'ctx> {
                     } else if ret_is_float {
                         let f0: BasicValueEnum = self.context.f64_type().const_float(0.0).into();
                         self.builder.build_return(Some(&f0)).unwrap();
+                    } else if ret_is_instance {
+                        let null_ptr: BasicValueEnum = self.context.ptr_type(inkwell::AddressSpace::default()).const_zero().into();
+                        self.builder.build_return(Some(&null_ptr)).unwrap();
                     } else {
                         self.builder.build_return(Some(&self.context.i64_type().const_zero())).unwrap();
                     }
@@ -403,6 +407,9 @@ impl<'ctx> CodeGen<'ctx> {
             azurite_parser::ast::Type::Name(n) if n == "int" => self.context.i64_type().into(),
             azurite_parser::ast::Type::Name(n) if n == "float" => self.context.f64_type().into(),
             azurite_parser::ast::Type::Name(n) if n == "bool" => self.context.i64_type().into(),
+            azurite_parser::ast::Type::Name(n) if self.struct_types.contains_key(n) => {
+                self.context.ptr_type(inkwell::AddressSpace::default()).into()
+            }
             _ => self.context.i64_type().into(),
         }
     }

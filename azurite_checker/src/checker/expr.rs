@@ -82,6 +82,21 @@ pub fn check_expr(c: &mut Checker, expr: &Expr) -> Option<Type> {
                     if c.generic_classes.contains_key(&ident.name) {
                         return c.instantiate_generic_constructor(&ident.name, args);
                     }
+                    if c.concrete_classes.contains_key(&ident.name) {
+                        let fn_name = format!("{}_{}", ident.name, method);
+                        let fn_type = c.scope.lookup(&fn_name).map(|s| s.type_.clone());
+                        if let Some(Type::Func { params, ret }) = fn_type {
+                            for (i, arg) in args.iter().enumerate() {
+                                let arg_type = super::expr::check_expr(c, arg);
+                                if let (Some(expected), Some(actual)) = (params.get(i), arg_type) {
+                                    if *expected != actual {
+                                        c.error(azurite_lexer::Span::new(0, 0, 0, 0), format!("arg {}: expected '{}', got '{}'", i + 1, expected, actual));
+                                    }
+                                }
+                            }
+                            return Some(*ret);
+                        }
+                    }
                 }
             }
             let obj_type = check_expr(c, obj);
