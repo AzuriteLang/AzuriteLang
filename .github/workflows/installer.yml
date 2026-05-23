@@ -13,8 +13,31 @@ jobs:
 
       - name: Install LLVM
         run: |
-          choco install llvm --version=22.1.0 -y
-          echo "LLVM_DIR=C:\Program Files\LLVM" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          choco install llvm --version=22.1.0 --force -y --ignore-checksums
+          # Find where chocolatey installed LLVM
+          $llvmPaths = @(
+            "C:\Program Files\LLVM",
+            "C:\tools\llvm",
+            "$env:ChocolateyInstall\lib\llvm\tools"
+          )
+          $llvmDir = $null
+          foreach ($p in $llvmPaths) {
+            if (Test-Path "$p\bin\llvm-config.exe") {
+              $llvmDir = $p; break
+            }
+          }
+          if (-not $llvmDir) {
+            $llvmDir = (Get-ChildItem -Path "C:\Program Files" -Filter "LLVM*" -Directory | Select-Object -First 1).FullName
+          }
+          if ($llvmDir) {
+            Add-Content -Path $env:GITHUB_ENV -Value "LLVM_SYS_221_PREFIX=$llvmDir"
+            Add-Content -Path $env:GITHUB_ENV -Value "LLVM_DIR=$llvmDir"
+            Add-Content -Path $env:GITHUB_ENV -Value "LIBCLANG_PATH=$llvmDir\bin"
+            Write-Host "LLVM found at: $llvmDir"
+          } else {
+            Write-Host "::error::LLVM not found after installation"
+            exit 1
+          }
         shell: pwsh
 
       - name: Install Inno Setup
@@ -24,12 +47,14 @@ jobs:
       - name: Build release
         run: cargo build --release --features llvm
         shell: pwsh
+        env:
+          LLVM_SYS_221_PREFIX: ${{ env.LLVM_SYS_221_PREFIX }}
 
       - name: Copy LLVM DLLs
         run: |
-          Copy-Item "$env:LLVM_DIR\bin\LLVM-C.dll" target\release\
-          Copy-Item "$env:LLVM_DIR\bin\clang.exe" target\release\
-          Copy-Item "$env:LLVM_DIR\bin\lld.exe" target\release\
+          Copy-Item "$env:LLVM_DIR\bin\LLVM-C.dll" target\release\ -ErrorAction SilentlyContinue
+          Copy-Item "$env:LLVM_DIR\bin\clang.exe" target\release\ -ErrorAction SilentlyContinue
+          Copy-Item "$env:LLVM_DIR\bin\lld.exe" target\release\ -ErrorAction SilentlyContinue
         shell: pwsh
         continue-on-error: true
 
