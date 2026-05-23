@@ -101,6 +101,17 @@ impl Lexer {
                 }
             }
             '#' => self.single_char_token(TokenKind::Hash),
+            '?' => {
+                let start = self.pos;
+                let line = self.line;
+                let col = self.col;
+                self.bump();
+                if self.peek() == Some('.') {
+                    self.bump();
+                    return Ok(Token::new(TokenKind::QuestionDot, Span::new(start, self.pos, line, col)));
+                }
+                return Ok(Token::new(TokenKind::Question, Span::new(start, self.pos, line, col)));
+            }
             _ => {
                 let span = self.current_span();
                 let err = format!("unexpected character '{}'", c);

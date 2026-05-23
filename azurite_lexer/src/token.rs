@@ -98,6 +98,8 @@ pub enum TokenKind {
     FatArrow,
     DotDot,
     Hash,
+    Question,
+    QuestionDot,
 
     // Special
     EOF,
@@ -167,6 +169,8 @@ impl fmt::Display for TokenKind {
             TokenKind::FatArrow => write!(f, "=>"),
             TokenKind::DotDot => write!(f, ".."),
             TokenKind::Hash => write!(f, "#"),
+            TokenKind::Question => write!(f, "?"),
+            TokenKind::QuestionDot => write!(f, "?."),
             TokenKind::EOF => write!(f, "EOF"),
             TokenKind::Error(e) => write!(f, "error: {}", e),
         }

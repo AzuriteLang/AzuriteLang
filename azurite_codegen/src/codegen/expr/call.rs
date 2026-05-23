@@ -61,7 +61,7 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                 Err(AzError::new(ErrorKind::Semantic, expr.span(), format!("undefined '{}'", callee_name)))
             }
         }
-        Expr::MethodCall { obj, method, args } => {
+        Expr::MethodCall { obj, method, args, null_safe } => {
             // Constructor call: ClassName.new(...)
             if method == "new" {
                 if let Expr::Ident(ident) = obj.as_ref() {

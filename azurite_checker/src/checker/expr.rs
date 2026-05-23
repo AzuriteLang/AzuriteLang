@@ -70,15 +70,18 @@ pub fn check_expr(c: &mut Checker, expr: &Expr) -> Option<Type> {
         Expr::Bool(_) => Some(Type::Bool),
         Expr::Null => Some(Type::Null),
         Expr::Self_ | Expr::Super => Some(Type::Void),
-        Expr::FieldAccess { obj, field } => {
+        Expr::FieldAccess { obj, field, null_safe } => {
             let span = obj.span();
             let obj_type = check_expr(c, obj);
+            if *null_safe && matches!(obj_type, Some(Type::Null)) {
+                return Some(Type::Null);
+            }
             match obj_type {
                 Some(ref t) => resolve_instance_field(c, t, field, span),
                 None => None,
             }
         }
-        Expr::MethodCall { obj, method, args } => {
+        Expr::MethodCall { obj, method, args, null_safe } => {
             let span = obj.span();
             if method == "new" {
                 if let Expr::Ident(ident) = obj.as_ref() {
@@ -101,6 +104,9 @@ pub fn check_expr(c: &mut Checker, expr: &Expr) -> Option<Type> {
                         }
                     }
                 }
+            }
+            if *null_safe && matches!(check_expr(c, obj), Some(Type::Null)) {
+                return Some(Type::Null);
             }
             let obj_type = check_expr(c, obj);
             match obj_type {

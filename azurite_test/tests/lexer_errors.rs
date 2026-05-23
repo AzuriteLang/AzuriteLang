@@ -8,10 +8,9 @@ fn test_unexpected_char() {
 
 #[test]
 fn test_unexpected_chars() {
-    let tokens = Lexer::new("@`?").tokenize().unwrap();
-    for t in &tokens[..3] {
-        assert!(matches!(t.kind, TokenKind::Error(_)));
-    }
+    let tokens = Lexer::new("@` ?").tokenize().unwrap();
+    assert!(matches!(tokens[0].kind, TokenKind::Error(_)));
+    assert!(matches!(tokens[1].kind, TokenKind::Error(_)));
 }
 
 #[test]

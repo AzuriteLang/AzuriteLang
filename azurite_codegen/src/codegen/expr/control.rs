@@ -20,9 +20,40 @@ pub fn compile_control<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<Basi
             let tag = variant.as_bytes().iter().fold(0u64, |acc, b| acc.wrapping_add(*b as u64));
             Ok(cg.context.i8_type().const_int(tag % 256, false).into())
         }
-        Expr::FieldAccess { obj, field } => {
+        Expr::FieldAccess { obj, field, null_safe } => {
             let obj_val = cg.compile_expr(obj)?;
             let ptr = obj_val.into_pointer_value();
+            if *null_safe {
+                let is_null = cg.builder.build_is_null(ptr, "is_null").unwrap();
+                let cf = cg.function.unwrap();
+                let skip_bb = cg.context.append_basic_block(cf, "field_skip");
+                let cont_bb = cg.context.append_basic_block(cf, "field_cont");
+                let merge_bb = cg.context.append_basic_block(cf, "field_merge");
+                cg.builder.build_conditional_branch(is_null, skip_bb, cont_bb).unwrap();
+                cg.builder.position_at_end(cont_bb);
+                let field_val = {
+                    let mut found = None;
+                    for (_, info) in &cg.struct_types {
+                        if let Some(idx) = info.field_names.iter().position(|f| f == field) {
+                            if let Some(ft) = info.field_types.get(idx) {
+                                let gep = cg.builder.build_struct_gep(info.llvm_struct, ptr, idx as u32, field).unwrap();
+                                found = Some(cg.builder.build_load(*ft, gep, field).unwrap());
+                                break;
+                            }
+                        }
+                    }
+                    found.unwrap_or_else(|| cg.context.i64_type().const_zero().into())
+                };
+                cg.builder.build_unconditional_branch(merge_bb).unwrap();
+                cg.builder.position_at_end(skip_bb);
+                cg.builder.build_unconditional_branch(merge_bb).unwrap();
+                cg.builder.position_at_end(merge_bb);
+                // Use phi to merge: cont_bb provides field_val, skip_bb provides 0
+                // Since i64 is trivial, use alloca-based phi
+                let phi = cg.builder.build_phi(cg.context.i64_type(), "ns_phi").unwrap();
+                phi.add_incoming(&[(&field_val.into_int_value(), cont_bb), (&cg.context.i64_type().const_zero(), skip_bb)]);
+                return Ok(phi.as_basic_value().into());
+            }
             for (_, info) in &cg.struct_types {
                 if let Some(idx) = info.field_names.iter().position(|f| f == field) {
                     if let Some(ft) = info.field_types.get(idx) {

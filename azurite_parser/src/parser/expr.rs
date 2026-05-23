@@ -49,7 +49,8 @@ pub fn parse_expr(p: &mut Parser, min_bp: u8) -> Result<Expr, AzError> {
                 p.expect(TokenKind::RBracket, "']'")?;
                 lhs = Expr::Index { obj: Box::new(lhs), index: Box::new(index) };
             }
-            Some(TokenKind::Dot) => {
+            Some(TokenKind::Dot) | Some(TokenKind::QuestionDot) => {
+                let null_safe = p.peek_kind() == Some(TokenKind::QuestionDot);
                 p.advance();
                 let field = match p.peek_kind() {
                     Some(TokenKind::Ident(name)) => { let n = name.to_string(); p.advance(); n }
@@ -59,9 +60,9 @@ pub fn parse_expr(p: &mut Parser, min_bp: u8) -> Result<Expr, AzError> {
                     p.advance();
                     let args = parse_call_args(p)?;
                     p.expect(TokenKind::RParen, "')'")?;
-                    lhs = Expr::MethodCall { obj: Box::new(lhs), method: field, args };
+                    lhs = Expr::MethodCall { obj: Box::new(lhs), method: field, args, null_safe };
                 } else {
-                    lhs = Expr::FieldAccess { obj: Box::new(lhs), field };
+                    lhs = Expr::FieldAccess { obj: Box::new(lhs), field, null_safe };
                 }
             }
             Some(TokenKind::DotDot) => {

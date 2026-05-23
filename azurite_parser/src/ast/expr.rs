@@ -48,10 +48,12 @@ pub enum Expr {
         obj: Box<Expr>,
         method: String,
         args: Vec<Expr>,
+        null_safe: bool,
     },
     FieldAccess {
         obj: Box<Expr>,
         field: String,
+        null_safe: bool,
     },
     EnumVariant {
         enum_name: String,
