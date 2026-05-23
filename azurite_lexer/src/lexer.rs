@@ -285,29 +285,39 @@ impl Lexer {
         let start_col = self.col;
         self.bump(); // skip opening "
 
+        // Check for docstring (""")
+        if self.peek() == Some('"') && self.peek_next() == Some('"') {
+            self.bump(); // skip second "
+            self.bump(); // skip third "
+            let mut value = String::new();
+            loop {
+                match self.peek() {
+                    None => return Err(format!("unterminated docstring at line {}, col {}", start_line, start_col)),
+                    Some('"') => {
+                        if self.peek_next() == Some('"') && self.chars.get(self.pos + 2).copied() == Some('"') {
+                            self.bump(); self.bump(); self.bump();
+                            let span = Span::new(start, self.pos, start_line, start_col);
+                            return Ok(Token::new(TokenKind::String(value.into()), span));
+                        }
+                        value.push('"');
+                        self.bump();
+                    }
+                    Some(c) => { value.push(c); self.bump(); }
+                }
+            }
+        }
+
         let mut value = String::new();
         loop {
             match self.peek() {
-                None => {
-                    return Err(format!(
-                        "unterminated string literal at line {}, col {}",
-                        start_line, start_col
-                    ));
-                }
+                None => return Err(format!("unterminated string literal at line {}, col {}", start_line, start_col)),
                 Some('"') => {
                     self.bump();
                     let span = Span::new(start, self.pos, start_line, start_col);
                     return Ok(Token::new(TokenKind::String(value.into()), span));
                 }
-                Some('\\') => {
-                    self.bump();
-                    let escaped = self.parse_escape()?;
-                    value.push(escaped);
-                }
-                Some(c) => {
-                    value.push(c);
-                    self.bump();
-                }
+                Some('\\') => { self.bump(); let escaped = self.parse_escape()?; value.push(escaped); }
+                Some(c) => { value.push(c); self.bump(); }
             }
         }
     }
