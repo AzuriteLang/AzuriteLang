@@ -6,7 +6,7 @@ use crate::codegen::CodeGen;
 fn is_bool_expr(expr: &Expr) -> bool {
     match expr {
         Expr::Bool(_) => true,
-        Expr::Binary { op, .. } => matches!(op, BinOp::Eq | BinOp::Neq | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge | BinOp::And | BinOp::Or),
+        Expr::Binary { op, .. } => matches!(op, BinOp::Eq | BinOp::Neq | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge | BinOp::And | BinOp::Or | BinOp::Is),
         Expr::Unary { op: UnOp::Not, .. } => true,
         Expr::Call { callee, .. } => {
             if let Expr::Ident(i) = callee.as_ref() {

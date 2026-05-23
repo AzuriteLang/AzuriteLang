@@ -7,6 +7,7 @@ pub enum BinOp {
     And, Or,
     BitAnd, BitOr, BitXor, Shl, Shr,
     Assign,
+    Is,
 }
 
 impl fmt::Display for BinOp {
@@ -22,6 +23,7 @@ impl fmt::Display for BinOp {
             BinOp::BitOr => write!(f, "|"), BinOp::BitXor => write!(f, "^"),
             BinOp::Shl => write!(f, "<<"), BinOp::Shr => write!(f, ">>"),
             BinOp::Assign => write!(f, "="),
+            BinOp::Is => write!(f, "is"),
         }
     }
 }

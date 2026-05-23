@@ -207,9 +207,48 @@ pub fn check_expr(c: &mut Checker, expr: &Expr) -> Option<Type> {
         }
         Expr::Binary { left, right, op } => {
             let span = left.span();
-            let l = check_expr(c, left);
-            let r = check_expr(c, right);
-            check_binary_op(c, l, r, *op, span)
+            if *op == BinOp::Is {
+                let l = check_expr(c, left);
+                let type_name = match right.as_ref() {
+                    Expr::Ident(i) => Some(&i.name),
+                    _ => None,
+                };
+                let r = type_name.and_then(|n| {
+                    match n.as_str() {
+                        "int" => Some(Type::Int),
+                        "float" => Some(Type::Float),
+                        "string" => Some(Type::String),
+                        "bool" => Some(Type::Bool),
+                        "void" => Some(Type::Void),
+                        "null" => Some(Type::Null),
+                        other => {
+                            if c.concrete_classes.contains_key(other) || c.enums.contains_key(other) {
+                                Some(Type::Instance { name: other.to_string() })
+                            } else {
+                                None
+                            }
+                        }
+                    }
+                });
+                match r {
+                    Some(rt) => {
+                        if l.as_ref().map_or(false, |lt| *lt == rt) {
+                            Some(Type::Bool)
+                        } else {
+                            c.error(span, format!("type mismatch: '{}' is not '{}'", l.as_ref().map(|t| t.to_string()).unwrap_or_default(), rt));
+                            None
+                        }
+                    }
+                    None => {
+                        c.error(span, format!("unknown type in 'is' expression"));
+                        None
+                    }
+                }
+            } else {
+                let l = check_expr(c, left);
+                let r = check_expr(c, right);
+                check_binary_op(c, l, r, *op, span)
+            }
         }
         Expr::Unary { op, operand } => {
             let span = operand.span();
@@ -303,6 +342,20 @@ fn check_binary_op(c: &mut Checker, l: Option<Type>, r: Option<Type>, op: BinOp,
         BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr => {
             if lt == Type::Int && rt == Type::Int { Some(Type::Int) }
             else { c.error(span, format!("bitwise op requires ints")); None }
+        }
+        BinOp::Is => {
+            // Check if the right side is a type name (string, int, float, bool, or a class name)
+            let is_valid_type = match &rt {
+                Type::String | Type::Int | Type::Float | Type::Bool | Type::Null | Type::Void => true,
+                Type::Instance { .. } => true,
+                _ => false,
+            };
+            if is_valid_type {
+                Some(Type::Bool)
+            } else {
+                c.error(span, format!("cannot use 'is' with '{}'", rt));
+                None
+            }
         }
     }
 }

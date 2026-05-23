@@ -9,7 +9,11 @@ pub fn compile_operator<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<Bas
     match expr {
         Expr::Binary { left, op, right } => {
             let span = expr.span();
-            if *op == BinOp::Assign { return compile_assign(cg, left, right, expr.span()); }
+            if *op == BinOp::Assign { return compile_assign(cg, left, right, span); }
+            if *op == BinOp::Is {
+                // The checker already verified the type match. Emit 1 at compile time.
+                return Ok(cg.context.i64_type().const_int(1, false).into());
+            }
             let lhs = cg.compile_expr(left)?;
             let rhs = cg.compile_expr(right)?;
             compile_binary(cg, lhs, rhs, *op, span)
@@ -63,7 +67,7 @@ fn compile_binary<'ctx>(cg: &CodeGen<'ctx>, lhs: BasicValueEnum<'ctx>, rhs: Basi
                 BinOp::BitXor => cg.builder.build_xor(l, r, "xortmp").unwrap().into(),
                 BinOp::Shl => cg.builder.build_left_shift(l, r, "shltmp").unwrap().into(),
                 BinOp::Shr => cg.builder.build_right_shift(l, r, false, "shrtmp").unwrap().into(),
-                BinOp::Assign => unreachable!(),
+                BinOp::Assign | BinOp::Is => unreachable!(),
             };
             Ok(val)
         }
@@ -87,6 +91,7 @@ fn compile_binary<'ctx>(cg: &CodeGen<'ctx>, lhs: BasicValueEnum<'ctx>, rhs: Basi
                     let cmp = cg.builder.build_float_compare(pred, l, r, "fcmptmp").unwrap();
                     cg.builder.build_int_z_extend(cmp, i64_ty, "fcmpext").unwrap().into()
                 }
+                BinOp::Is => { return Ok(cg.context.i64_type().const_int(1, false).into()); }
                 _ => return Err(AzError::new(ErrorKind::Semantic, span, "unsupported float op")),
             };
             Ok(val)
@@ -135,13 +140,42 @@ fn compile_string_concat<'ctx>(cg: &CodeGen<'ctx>, l: inkwell::values::PointerVa
 }
 
 fn compile_assign<'ctx>(cg: &mut CodeGen<'ctx>, left: &Expr, right: &Expr, span: Span) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let var_name = match left {
-        Expr::Ident(i) => i.name.clone(),
-        _ => return Err(AzError::new(ErrorKind::Semantic, span, "left side must be a variable")),
-    };
-    let rhs = cg.compile_expr(right)?;
-    match cg.variables.get(&var_name) {
-        Some((ptr, _)) => { cg.builder.build_store(*ptr, rhs).unwrap(); Ok(rhs) }
-        None => Err(AzError::new(ErrorKind::Semantic, span, format!("undefined '{}'", var_name)))
+    match left {
+        Expr::Ident(i) => {
+            let var_name = i.name.clone();
+            let rhs = cg.compile_expr(right)?;
+            match cg.variables.get(&var_name) {
+                Some((ptr, _)) => { cg.builder.build_store(*ptr, rhs).unwrap(); Ok(rhs) }
+                None => Err(AzError::new(ErrorKind::Semantic, span, format!("undefined '{}'", var_name)))
+            }
+        }
+        Expr::FieldAccess { obj, field, null_safe: _ } => {
+            let _ = cg.compile_expr(obj)?;
+            let obj_ptr = match obj.as_ref() {
+                Expr::Ident(i) => cg.variables.get(&i.name).map(|(ptr, _)| *ptr),
+                _ => None,
+            };
+            match obj_ptr {
+                Some(ptr) => {
+                    let loaded = cg.builder.build_load(cg.context.ptr_type(inkwell::AddressSpace::default()), ptr, "obj").unwrap().into_pointer_value();
+                    let rhv = cg.compile_expr(right)?;
+                    let mut found = false;
+                    let result = Ok(rhv);
+                    for (_, info) in &cg.struct_types {
+                        if let Some(idx) = info.field_names.iter().position(|f| f == field) {
+                            if info.field_types.get(idx).is_some() {
+                                let gep = cg.builder.build_struct_gep(info.llvm_struct, loaded, idx as u32, field).unwrap();
+                                cg.builder.build_store(gep, rhv).unwrap();
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    if found { result } else { Err(AzError::new(ErrorKind::Semantic, span, format!("no field '{}'", field))) }
+                }
+                None => Err(AzError::new(ErrorKind::Semantic, span, "cannot assign to field of non-variable")),
+            }
+        }
+        _ => Err(AzError::new(ErrorKind::Semantic, span, "left side must be a variable or field")),
     }
 }

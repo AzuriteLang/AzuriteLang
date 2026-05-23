@@ -52,6 +52,8 @@ pub enum TokenKind {
     And,
     Or,
     Not,
+    Loop,
+    Is,
 
     // Literals
     Int(i64),
@@ -131,6 +133,8 @@ impl fmt::Display for TokenKind {
             TokenKind::And => write!(f, "and"),
             TokenKind::Or => write!(f, "or"),
             TokenKind::Not => write!(f, "not"),
+            TokenKind::Loop => write!(f, "loop"),
+            TokenKind::Is => write!(f, "is"),
             TokenKind::Int(n) => write!(f, "{}", n),
             TokenKind::Float(n) => write!(f, "{}", n),
             TokenKind::String(s) => write!(f, "\"{}\"", s),

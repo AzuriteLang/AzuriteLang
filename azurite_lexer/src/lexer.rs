@@ -305,6 +305,8 @@ impl Lexer {
             "and" => TokenKind::And,
             "or" => TokenKind::Or,
             "not" => TokenKind::Not,
+            "loop" => TokenKind::Loop,
+            "is" => TokenKind::Is,
             _ => TokenKind::Ident(ident.into()),
         };
         Ok(Token::new(kind, span))

@@ -108,9 +108,10 @@ pub fn infix_binding_power(op: BinOp) -> (u8, u8) {
         BinOp::BitXor => (13, 14),
         BinOp::BitAnd => (15, 16),
         BinOp::Shl | BinOp::Shr => (17, 18),
-        BinOp::Add | BinOp::Sub => (19, 20),
-        BinOp::Mul | BinOp::Div | BinOp::Mod => (21, 22),
-    }
+    BinOp::Add | BinOp::Sub => (19, 20),
+    BinOp::Mul | BinOp::Div | BinOp::Mod => (21, 22),
+    BinOp::Is => (7, 8),
+}
 }
 
 pub fn is_binop(kind: &TokenKind) -> bool {
@@ -120,6 +121,7 @@ pub fn is_binop(kind: &TokenKind) -> bool {
         | TokenKind::Less | TokenKind::Greater | TokenKind::LessEqual | TokenKind::GreaterEqual
         | TokenKind::AndAnd | TokenKind::OrOr | TokenKind::And | TokenKind::Or
         | TokenKind::BitAnd | TokenKind::BitOr | TokenKind::BitXor | TokenKind::Shl | TokenKind::Shr
+        | TokenKind::Is
     )
 }
 
@@ -148,6 +150,7 @@ pub fn token_to_binop(kind: TokenKind) -> Option<BinOp> {
         TokenKind::BitXor => Some(BinOp::BitXor),
         TokenKind::Shl => Some(BinOp::Shl),
         TokenKind::Shr => Some(BinOp::Shr),
+        TokenKind::Is => Some(BinOp::Is),
         _ => None,
     }
 }

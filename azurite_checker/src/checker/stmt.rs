@@ -14,7 +14,13 @@ pub fn check_stmt(c: &mut Checker, stmt: &Stmt) -> Option<Type> {
                     Some(dec)
                 }
                 (Some(inf), None) => {
-                    if inf == Type::Null { c.error(name.span, format!("cannot infer type for 'let {}'", name.name)); }
+                    if inf == Type::Null {
+                        if let Expr::Null = value.as_ref() {
+                            // Allow inferring Type::Null for null literal
+                        } else {
+                            c.error(name.span, format!("cannot infer type for 'let {}'", name.name));
+                        }
+                    }
                     Some(inf)
                 }
                 (None, Some(dec)) => Some(dec),

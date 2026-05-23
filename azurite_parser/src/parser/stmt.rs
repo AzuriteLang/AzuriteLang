@@ -26,6 +26,7 @@ pub fn parse_stmt(p: &mut Parser) -> Result<Stmt, AzError> {
         Some(TokenKind::Return) => parse_return(p),
         Some(TokenKind::Break) => { p.advance(); p.expect_semicolon()?; Ok(Stmt::Break) }
         Some(TokenKind::Continue) => { p.advance(); p.expect_semicolon()?; Ok(Stmt::Continue) }
+        Some(TokenKind::Loop) => parse_loop(p),
         _ => {
             let e = expr::parse_expr(p, 0)?;
             p.expect_semicolon()?;
@@ -229,6 +230,12 @@ fn parse_import(p: &mut Parser) -> Result<Stmt, AzError> {
         }
         _ => Err(p.err("expected string after 'import'")),
     }
+}
+
+fn parse_loop(p: &mut Parser) -> Result<Stmt, AzError> {
+    p.advance();
+    let body = expr::parse_block(p)?;
+    Ok(Stmt::While { condition: Box::new(Expr::Bool(true)), body: Box::new(body) })
 }
 
 fn parse_return(p: &mut Parser) -> Result<Stmt, AzError> {
