@@ -2,7 +2,7 @@
 target/
 Cargo.lock
 
-# IDE
+# Editor
 .vscode/
 .idea/
 *.swp
@@ -12,9 +12,5 @@ Cargo.lock
 .DS_Store
 Thumbs.db
 
-# LLVM / generated
+# Generated
 *.ll
-*.bc
-*.o
-*.out
-*.exe
