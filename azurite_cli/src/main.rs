@@ -33,6 +33,16 @@ enum Cli {
         #[arg(default_value = ".")]
         dir: PathBuf,
     },
+    #[command(about = "Install a dependency (from registry or custom)")]
+    Install {
+        name: String,
+        #[arg(long, help = "Git URL")]
+        git: Option<String>,
+        #[arg(long, help = "Local path")]
+        path: Option<String>,
+        #[arg(long, help = "Git revision")]
+        rev: Option<String>,
+    },
 }
 
 fn main() {
@@ -43,6 +53,7 @@ fn main() {
         Cli::Build { file, output } => cmd_build(file, output.as_ref()),
         Cli::Repl => cmd_repl(),
         Cli::Init { dir } => cmd_init(dir),
+        Cli::Install { name, git, path, rev } => cmd_install(name, git.as_deref(), path.as_deref(), rev.as_deref()),
     };
 
     if let Err(msg) = result {
@@ -109,6 +120,73 @@ version = "0.1.0"
     fs::write(&manifest_path, &content)
         .map_err(|e| format!("cannot write azurite.toml: {}", e))?;
     println!("Created {}", manifest_path.display());
+    Ok(())
+}
+
+fn registry_url(name: &str) -> Option<String> {
+    let known: &[(&str, &str)] = &[
+        ("string", "https://github.com/AzuriteLang/string"),
+    ];
+    known.iter().find(|(n, _)| *n == name).map(|(_, u)| u.to_string())
+}
+
+fn cmd_install(name: &str, git: Option<&str>, path: Option<&str>, rev: Option<&str>) -> Result<(), String> {
+    let cwd = std::env::current_dir().map_err(|e| format!("cannot get cwd: {}", e))?;
+    let manifest_path = find_manifest(&cwd).unwrap_or_else(|| cwd.join("azurite.toml"));
+    let mut content = if manifest_path.exists() {
+        fs::read_to_string(&manifest_path).map_err(|e| format!("cannot read {}: {}", manifest_path.display(), e))?
+    } else {
+        let dir_name = cwd.file_name().and_then(|n| n.to_str()).unwrap_or("project");
+        format!(
+            r#"[package]
+name = "{}"
+version = "0.1.0"
+
+[dependencies]
+"#,
+            dir_name
+        )
+    };
+
+    let git_url = match (git, path) {
+        (Some(url), _) => url.to_string(),
+        (None, Some(_)) => String::new(),
+        (None, None) => registry_url(name)
+            .ok_or_else(|| format!("unknown package '{}'. Use --git <url> or --path <path>", name))?,
+    };
+
+    let dep_line = if let Some(p) = path {
+        match rev {
+            Some(r) => format!("{} = {{ path = \"{}\", rev = \"{}\" }}", name, p, r),
+            None => format!("{} = {{ path = \"{}\" }}", name, p),
+        }
+    } else {
+        match rev {
+            Some(r) => format!("{} = {{ git = \"{}\", rev = \"{}\" }}", name, git_url, r),
+            None => format!("{} = {{ git = \"{}\" }}", name, git_url),
+        }
+    };
+
+    if content.lines().any(|l| l.trim().starts_with(&format!("{} =", name))) {
+        return Err(format!("dependency '{}' already exists in azurite.toml", name));
+    }
+
+    if let Some(deps_pos) = content.find("[dependencies]") {
+        let after = &content[deps_pos + 15..];
+        let insert_pos = if let Some(last_dep) = after.rfind('\n') {
+            deps_pos + 15 + last_dep + 1
+        } else {
+            content.len()
+        };
+        let indent = if content[insert_pos..].trim().is_empty() { "\n" } else { "\n" };
+        content.insert_str(insert_pos, &format!("{}{}", indent, dep_line));
+    } else {
+        content.push_str(&format!("\n[dependencies]\n{}\n", dep_line));
+    }
+
+    fs::write(&manifest_path, &content)
+        .map_err(|e| format!("cannot write {}: {}", manifest_path.display(), e))?;
+    println!("Added '{}' to {}", name, manifest_path.display());
     Ok(())
 }
 
