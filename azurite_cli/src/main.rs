@@ -44,7 +44,8 @@ fn main() {
         Cli::Repl => cmd_repl(),
     };
 
-    if let Err(_msg) = result {
+    if let Err(msg) = result {
+        eprintln!("{}", msg);
         std::process::exit(1);
     }
 }

@@ -1,0 +1,10 @@
+class Box<T> { value: T func new(value: T) { self.value = value } }
+
+func double(x: int) -> int {
+    return x * 2
+}
+
+func main() {
+    let b = Box.new(double(21))
+    print(b.value)
+}

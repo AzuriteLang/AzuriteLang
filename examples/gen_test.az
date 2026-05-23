@@ -1,0 +1,6 @@
+class Box<T> { value: T }
+
+func main() {
+    let b = Box.new(42)
+    print(b.value)
+}

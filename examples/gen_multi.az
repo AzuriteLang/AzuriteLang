@@ -1,0 +1,10 @@
+class Box<T> { value: T }
+
+func main() {
+    let a = Box.new(10)
+    let b = Box.new(20)
+    let c = Box.new(30)
+    print(a.value)
+    print(b.value)
+    print(c.value)
+}

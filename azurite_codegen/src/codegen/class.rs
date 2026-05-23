@@ -1,6 +1,7 @@
 use azurite_errors::AzError;
 use azurite_parser::ast::*;
 use inkwell::types::{BasicMetadataTypeEnum, BasicTypeEnum};
+use inkwell::values::BasicValueEnum;
 use crate::codegen::{ClassInfo, CodeGen};
 
 pub fn compile_class<'ctx>(cg: &mut CodeGen<'ctx>, name: &Ident, fields: &[ClassField], methods: &[Stmt], parent: &Option<Box<Type>>) -> Result<(), AzError> {
@@ -91,7 +92,7 @@ fn compile_method<'ctx>(
             }
         }
 
-        let loaded = cg.builder.build_load(cg.context.ptr_type(inkwell::AddressSpace::default()), instance, "result").unwrap();
+        let loaded: BasicValueEnum = instance.into();
         cg.builder.build_return(Some(&loaded)).unwrap();
         cg.function = None;
         cg.current_class = None;

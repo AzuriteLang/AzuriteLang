@@ -1,0 +1,7 @@
+class Box<T> { value: T func new(value: T) { self.value = value } func get(self) -> T { return self.value } }
+
+func main() {
+    let b = Box.new(42)
+    let v = b.get()
+    print(v)
+}

@@ -56,9 +56,44 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                                 }.to_string()
                             };
                             let concrete_name = format!("{}_{}", ident.name, concrete_suffix);
-                            // Compile the concrete class
+                            // Add auto-generated 'new' method if not present
+                            let has_new = methods.iter().any(|m| matches!(m, Stmt::Func { name: mn, .. } if mn.name == "new"));
+                            let concrete_methods: Vec<Stmt> = if has_new {
+                                methods.clone()
+                            } else {
+                                let mut m = methods.clone();
+                                let new_params: Vec<Param> = fields.iter().map(|f| Param {
+                                    name: f.name.clone(),
+                                    type_annotation: Some(subst_type(&f.type_, "_T", &concrete_suffix)),
+                                }).collect();
+                                m.push(Stmt::Func {
+                                    name: Ident { name: "new".to_string(), span: Span::new(0, 0, 1, 1) },
+                                    params: new_params,
+                                    return_type: None,
+                                    body: Box::new(Expr::Block(vec![])),
+                                });
+                                m
+                            };
+                            // Substitute 'T' type in fields (actual name in AST type params may vary)
+                            let concrete_fields: Vec<ClassField> = fields.iter().map(|f| ClassField {
+                                name: f.name.clone(),
+                                type_: subst_type(&f.type_, "_T", &concrete_suffix),
+                            }).collect();
+                            // Compile the concrete class with concrete methods
+                            let saved_fn = cg.function;
+                            let saved_self_ptr = cg.self_ptr.take();
+                            let saved_class = cg.current_class.take();
+                            let saved_vars = std::mem::take(&mut cg.variables);
+                            let saved_block = cg.builder.get_insert_block();
                             let concrete_ident = Ident { name: concrete_name.clone(), span: azurite_lexer::Span::new(0, 0, 0, 0) };
-                            super::super::class::compile_class(cg, &concrete_ident, &fields, &methods, &None)?;
+                            super::super::class::compile_class(cg, &concrete_ident, &concrete_fields, &concrete_methods, &None)?;
+                            cg.function = saved_fn;
+                            cg.self_ptr = saved_self_ptr;
+                            cg.current_class = saved_class;
+                            cg.variables = saved_vars;
+                            if let Some(bb) = saved_block {
+                                cg.builder.position_at_end(bb);
+                            }
                             let fn_name2 = format!("{}_{}", concrete_name, method);
                             if let Some(f) = cg.module.get_function(&fn_name2) {
                                 let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
@@ -211,4 +246,20 @@ fn compile_char_at<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicV
     let loaded = cg.builder.build_load(cg.context.i8_type(), elem, "char").unwrap();
     // Zero-extend i8 to i64
     Ok(cg.builder.build_int_z_extend(loaded.into_int_value(), cg.context.i64_type(), "ch_ext").unwrap().into())
+}
+
+fn subst_type(ty: &Type, _type_param: &str, _concrete: &str) -> Type {
+    match ty {
+        Type::Name(n) if n == "int" || n == "float" || n == "string" || n == "bool" || n == "void" || n == "none" => ty.clone(),
+        Type::Name(_) => {
+            match _concrete {
+                "int" => Type::Name("int".to_string()),
+                "float" => Type::Name("float".to_string()),
+                "string" => Type::Name("string".to_string()),
+                "bool" => Type::Name("bool".to_string()),
+                _ => Type::Name("int".to_string()),
+            }
+        },
+        _ => ty.clone(),
+    }
 }
