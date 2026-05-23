@@ -14,6 +14,10 @@ pub fn compile_operator<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<Bas
                 // The checker already verified the type match. Emit 1 at compile time.
                 return Ok(cg.context.i64_type().const_int(1, false).into());
             }
+            // Short-circuit evaluation for && and ||
+            if *op == BinOp::And || *op == BinOp::Or {
+                return compile_short_circuit(cg, left, right, *op);
+            }
             let lhs = cg.compile_expr(left)?;
             let rhs = cg.compile_expr(right)?;
             compile_binary(cg, lhs, rhs, *op, span)
@@ -45,6 +49,54 @@ pub fn compile_operator<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<Bas
         }
         _ => unreachable!(),
     }
+}
+
+fn compile_short_circuit<'ctx>(cg: &mut CodeGen<'ctx>, left: &Expr, right: &Expr, op: BinOp) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let i64_ty = cg.context.i64_type();
+    let cf = cg.function.unwrap();
+
+    // Alloca to store the result (created in entry block, accessible from all blocks)
+    let res = cg.create_entry_alloca(i64_ty.into(), "sc_res");
+
+    // Compile left side
+    let lhs = cg.compile_expr(left)?;
+    let lhs_bool = cg.to_bool(lhs);
+
+    let rhs_bb = cg.context.append_basic_block(cf, "sc_rhs");
+    let merge_bb = cg.context.append_basic_block(cf, "sc_merge");
+
+    if op == BinOp::And {
+        // a && b: if a is false → 0, if a is true → evaluate b
+        let false_bb = cg.context.append_basic_block(cf, "sc_false");
+        cg.builder.build_conditional_branch(lhs_bool, rhs_bb, false_bb).unwrap();
+        cg.builder.position_at_end(false_bb);
+        cg.builder.build_store(res, i64_ty.const_zero()).unwrap();
+        cg.builder.build_unconditional_branch(merge_bb).unwrap();
+    } else {
+        // a || b: if a is true → 1, if a is false → evaluate b
+        let true_bb = cg.context.append_basic_block(cf, "sc_true");
+        cg.builder.build_conditional_branch(lhs_bool, true_bb, rhs_bb).unwrap();
+        cg.builder.position_at_end(true_bb);
+        cg.builder.build_store(res, i64_ty.const_int(1, false)).unwrap();
+        cg.builder.build_unconditional_branch(merge_bb).unwrap();
+    }
+
+    // Right side: evaluate b
+    cg.builder.position_at_end(rhs_bb);
+    let rhs = cg.compile_expr(right)?;
+    let rhs_bool = cg.to_bool(rhs);
+    let rhs_int = if rhs_bool.get_type() == cg.context.bool_type() {
+        cg.builder.build_int_z_extend(rhs_bool, i64_ty, "rhs_ext").unwrap()
+    } else {
+        rhs_bool
+    };
+    cg.builder.build_store(res, rhs_int).unwrap();
+    cg.builder.build_unconditional_branch(merge_bb).unwrap();
+
+    // Merge
+    cg.builder.position_at_end(merge_bb);
+    let result = cg.builder.build_load(i64_ty, res, "sc_load").unwrap();
+    Ok(result)
 }
 
 fn compile_binary<'ctx>(cg: &CodeGen<'ctx>, lhs: BasicValueEnum<'ctx>, rhs: BasicValueEnum<'ctx>, op: BinOp, span: Span) -> Result<BasicValueEnum<'ctx>, AzError> {
