@@ -14,11 +14,12 @@ func main() {
 - **Python-like syntax** with `{}` blocks, no indentation rules
 - **Strong static typing** with type inference
 - **LLVM backend** generates native executables
-- **Classes** with fields, methods, and constructors
-- **Enums** with data variants
-- **Pattern matching** with `match` expressions
+- **Classes** with fields, methods, constructors, and inheritance
+- **Enums** with data variants and pattern matching (`match`)
 - **Arrays** with heap allocation
-- **Generics, inheritance** *(coming soon)*
+- **Generics** (generic classes)
+- **Package manager** — git dependencies with `azurite.toml`
+- **Standard library** — `string` lib on GitHub
 
 ## Quick Start
 
@@ -33,7 +34,7 @@ func main() {
 # Build the compiler
 cargo build --release
 
-# Run tests
+# Run tests (270+)
 cargo test
 ```
 
@@ -51,16 +52,87 @@ cargo run --features llvm -- build hello.az
 ./hello.exe
 ```
 
-> Without `--features llvm`, the compiler can still tokenize, parse, and type-check code.
+> Without `--features llvm`, the compiler can still parse and type-check code.
 
 ## CLI Commands
 
 | Command | Description |
 |---|---|
-| `azurite tokenize file.az` | Show tokens |
-| `azurite parse file.az` | Show AST |
 | `azurite check file.az` | Type-check with colored errors |
-| `azurite build file.az` | Compile to `.exe` (requires `--features llvm`) |
+| `azurite build file.az` | Compile to `.exe` (requires `llvm` feature) |
+| `azurite repl` | Interactive REPL |
+| `azurite init [dir]` | Create a new project with `azurite.toml` |
+
+## Package Manager
+
+Azurite uses a Cargo-inspired manifest + cache system for dependencies.
+
+### `azurite.toml`
+
+```toml
+[package]
+name = "my-project"
+version = "0.1.0"
+
+[dependencies]
+string = { git = "https://github.com/AzuriteLang/string" }
+local  = { path = "../my-lib" }
+```
+
+### Dependency types
+
+| Field | Description |
+|---|---|
+| `git` | GitHub (or any git) repository URL |
+| `path` | Local filesystem path (absolute or relative) |
+| `rev` | Optional git revision (tag, commit, branch) |
+
+### Resolution
+
+1. `azurite check/build` finds `azurite.toml` (walks up directories)
+2. **Git deps** → cloned to `~/.azurite/cache/<name>/` (shallow `--depth 1`)
+3. **Path deps** → resolved relative to the manifest location
+4. All imported code is inlined recursively before type-checking
+
+```bash
+azurite init my-project
+cd my-project
+azurite check main.az
+```
+
+## Imports
+
+```az
+import "string"
+import "mylib"
+
+func main() {
+    print(contains("hello", "ell"))    // 1 (true)
+    print(to_upper("azurite"))          // AZURITE
+}
+```
+
+- **Named imports** resolve to dependencies listed in `azurite.toml`
+- **File paths** (`import "math.az"`) resolve relative to the current file
+- Convention: each dependency exposes `src/lib.az` or `main.az`
+
+## Standard Library
+
+### `string` — [`github.com/AzuriteLang/string`](https://github.com/AzuriteLang/string)
+
+```toml
+[dependencies]
+string = { git = "https://github.com/AzuriteLang/string" }
+```
+
+| Category | Functions |
+|---|---|
+| **Core** | `is_empty`, `first`, `last`, `is_digit_char`, `is_letter_char`, `is_whitespace_char` |
+| **Search** | `contains`, `starts_with`, `ends_with`, `index_of`, `count` |
+| **Pad** | `repeat`, `pad_left`, `pad_right`, `pad_left_with`, `pad_right_with`, `zfill`, `center` |
+| **Parse** | `to_int`, `equals_ignore_case` |
+| **Transform** | `to_upper`, `to_lower`, `reverse`, `trim`, `trim_start`, `trim_end`, `replace`, `substring` |
+| **Check** | `is_upper`, `is_lower`, `is_digit`, `is_letter`, `is_alnum`, `is_whitespace` |
 
 ## Language Syntax
 
@@ -89,20 +161,17 @@ func greet(name: string) {
 ### Control Flow
 
 ```az
-// If-else
 if x > 0 {
     print("positive")
 } else {
     print("non-positive")
 }
 
-// While
 while i < 10 {
     print(i)
     i = i + 1
 }
 
-// For
 for i in 0..10 {
     print(i)
 }
@@ -126,16 +195,12 @@ let p = Person.new("Alice", 30)
 p.greet()
 ```
 
-### Enums
+### Enums + Match
 
 ```az
 enum Color { Red, Green, Blue }
 enum Option { Some(int), None }
-```
 
-### Match
-
-```az
 match x {
     1 => print("one")
     2 => print("two")
@@ -154,12 +219,14 @@ arr[1] = 99
 ### Built-in Functions
 
 ```az
-print(a, b, c)     // print any types
+print(a, b, c)     // print any types (varargs)
 len(s)             // string length
+chr(n)             // int ASCII code → 1-char string
 sqrt(x)            // square root
 abs(x)             // absolute value
 int(f)             // float to int
 float(i)           // int to float
+char_at(s, i)      // char code at position
 read()             // read stdin
 input(prompt)      // read with prompt
 exit(code)         // exit program
@@ -168,13 +235,14 @@ exit(code)         // exit program
 ## Project Structure
 
 ```
-azurite_lexer/     # Lexer (tokenizer)
-azurite_parser/    # Parser + AST (Pratt parser)
-azurite_checker/   # Type checker + symbol table
-azurite_codegen/   # LLVM IR codegen (feature-gated)
-azurite_errors/    # Error messages with spans
-azurite_cli/       # CLI (tokenize, parse, check, build)
-azurite_test/      # 164 integration tests
+azurite_lexer/      # Lexer (tokenizer)
+azurite_parser/     # Parser + AST (Pratt parser)
+azurite_checker/    # Type checker + symbol table
+azurite_codegen/    # LLVM IR codegen (feature-gated)
+azurite_errors/     # Error messages with spans
+azurite_resolver/   # Package/dependency resolver (azurite.toml)
+azurite_cli/        # CLI (check, build, repl, init)
+azurite_test/       # 270+ integration tests
 ```
 
 ## License

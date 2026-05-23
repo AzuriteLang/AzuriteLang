@@ -23,6 +23,7 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                 "input" => return compile_input(cg, args),
                 "exit" => return compile_exit(cg, args),
                 "char_at" => return compile_char_at(cg, args),
+                "chr" => return compile_chr(cg, args),
                 _ => {}
             }
             let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
@@ -271,6 +272,19 @@ fn compile_char_at<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicV
     let loaded = cg.builder.build_load(cg.context.i8_type(), elem, "char").unwrap();
     // Zero-extend i8 to i64
     Ok(cg.builder.build_int_z_extend(loaded.into_int_value(), cg.context.i64_type(), "ch_ext").unwrap().into())
+}
+
+fn compile_chr<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let val = cg.compile_expr(&args[0])?;
+    let i64_val = val.into_int_value();
+    let i8_val = cg.builder.build_int_truncate(i64_val, cg.context.i8_type(), "chr_trunc").unwrap();
+    let buf = cg.builder.build_alloca(cg.context.i8_type(), "chr_buf").unwrap();
+    cg.builder.build_store(buf, i8_val).unwrap();
+    let null_gep = unsafe {
+        cg.builder.build_gep(cg.context.i8_type(), buf, &[cg.context.i64_type().const_int(1, false)], "null_gep").unwrap()
+    };
+    cg.builder.build_store(null_gep, cg.context.i8_type().const_zero()).unwrap();
+    Ok(buf.into())
 }
 
 fn subst_type_multi(ty: &Type, type_params: &[String], concrete_types: &[String]) -> Type {

@@ -23,7 +23,10 @@ pub fn compile_operator<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<Bas
                 }
                 UnOp::Not => {
                     let i = val.into_int_value();
-                    Ok(cg.builder.build_not(i, "nottmp").unwrap().into())
+                    let zero = cg.context.i64_type().const_zero();
+                    let cmp = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, i, zero, "nottmp").unwrap();
+                    let ext = cg.builder.build_int_z_extend(cmp, cg.context.i64_type(), "not_ext").unwrap();
+                    Ok(ext.into())
                 }
             }
         }
