@@ -11,31 +11,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache LLVM
+        id: cache-llvm
+        uses: actions/cache@v4
+        with:
+          path: C:\LLVM-22.1
+          key: llvm-22.1.0-win64
+
       - name: Install LLVM
+        if: steps.cache-llvm.outputs.cache-hit != 'true'
         run: |
-          choco install llvm --version=22.1.0 --force -y --ignore-checksums
-          # Find where chocolatey installed LLVM
-          $llvmPaths = @(
-            "C:\Program Files\LLVM",
-            "C:\tools\llvm",
-            "$env:ChocolateyInstall\lib\llvm\tools"
-          )
-          $llvmDir = $null
-          foreach ($p in $llvmPaths) {
-            if (Test-Path "$p\bin\llvm-config.exe") {
-              $llvmDir = $p; break
-            }
+          $url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.0/LLVM-22.1.0-win64.exe"
+          $output = "$env:TEMP\LLVM-setup.exe"
+          Write-Host "Downloading LLVM 22.1.0..."
+          curl.exe -L -o $output $url
+          if (-not (Test-Path $output)) {
+            Write-Host "::error::Download failed. Trying alternate URL..."
+            $url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.0/LLVM-22.1.0-win64.exe"
+            curl.exe -L -o $output $url
           }
-          if (-not $llvmDir) {
-            $llvmDir = (Get-ChildItem -Path "C:\Program Files" -Filter "LLVM*" -Directory | Select-Object -First 1).FullName
-          }
-          if ($llvmDir) {
-            Add-Content -Path $env:GITHUB_ENV -Value "LLVM_SYS_221_PREFIX=$llvmDir"
-            Add-Content -Path $env:GITHUB_ENV -Value "LLVM_DIR=$llvmDir"
-            Add-Content -Path $env:GITHUB_ENV -Value "LIBCLANG_PATH=$llvmDir\bin"
-            Write-Host "LLVM found at: $llvmDir"
+          if (Test-Path $output) {
+            Write-Host "Installing LLVM..."
+            Start-Process -FilePath $output -ArgumentList "/S /D=C:\LLVM-22.1" -Wait -NoNewWindow
           } else {
-            Write-Host "::error::LLVM not found after installation"
+            Write-Host "::error::Could not download LLVM. Please update the URL."
+            exit 1
+          }
+        shell: pwsh
+
+      - name: Set LLVM env
+        run: |
+          if (Test-Path "C:\LLVM-22.1\bin\llvm-config.exe") {
+            $ver = & "C:\LLVM-22.1\bin\llvm-config.exe" --version
+            Add-Content -Path $env:GITHUB_ENV -Value "LLVM_SYS_221_PREFIX=C:\LLVM-22.1"
+            Add-Content -Path $env:GITHUB_ENV -Value "LLVM_DIR=C:\LLVM-22.1"
+            Add-Content -Path $env:GITHUB_ENV -Value "LIBCLANG_PATH=C:\LLVM-22.1\bin"
+            Write-Host "LLVM $ver ready at C:\LLVM-22.1"
+          } else {
+            Write-Host "::error::LLVM not found at C:\LLVM-22.1"
             exit 1
           }
         shell: pwsh
