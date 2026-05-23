@@ -1,13 +1,4 @@
-use azurite_lexer::Lexer;
-use azurite_parser::Parser;
-use azurite_checker::Checker;
-use azurite_errors::AzError;
-
-fn check(src: &str) -> Result<(), Vec<AzError>> {
-    let tokens = Lexer::new(src).tokenize().unwrap();
-    let prog = Parser::new(tokens).parse_program().unwrap();
-    Checker::new().check_program(&prog)
-}
+use azurite_test::check;
 
 #[test]
 fn test_accepts_valid_program() {

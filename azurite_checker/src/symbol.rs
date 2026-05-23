@@ -50,9 +50,4 @@ impl Scope {
         }
         None
     }
-
-    pub fn lookup_current(&self, name: &str) -> Option<&Symbol> {
-        let current = self.symbols.last().unwrap();
-        current.iter().find(|(n, _)| n == name).map(|(_, s)| s)
-    }
 }

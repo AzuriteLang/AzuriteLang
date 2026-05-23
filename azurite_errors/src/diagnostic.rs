@@ -47,7 +47,7 @@ impl Diagnostic {
             eprintln!("  {} |{} {}", CYAN, RESET, caret);
 
             if let Some(ref help) = error.help {
-                eprintln!("  {} ={} {}: {}", YELLOW, RESET, BOLD, RESET);
+                eprintln!("  {} ={} {}:", YELLOW, RESET, BOLD);
                 eprintln!("  {} ={} {}", YELLOW, RESET, help);
             }
         }

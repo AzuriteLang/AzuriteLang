@@ -163,18 +163,7 @@ impl Lexer {
                 }
                 Some('\\') => {
                     self.bump();
-                    let escaped = match self.peek() {
-                        Some('n') => '\n',
-                        Some('t') => '\t',
-                        Some('r') => '\r',
-                        Some('\\') => '\\',
-                        Some('"') => '"',
-                        Some('\'') => '\'',
-                        Some('0') => '\0',
-                        Some(c) => return Err(format!("invalid escape char '\\{}'", c)),
-                        None => return Err("unterminated string literal (in escape)".to_string()),
-                    };
-                    self.bump();
+                    let escaped = self.parse_escape()?;
                     value.push(escaped);
                 }
                 Some(c) => {
@@ -196,18 +185,7 @@ impl Lexer {
             None => return Err("unterminated char literal".to_string()),
             Some('\\') => {
                 self.bump();
-                let esc = match self.peek() {
-                    Some('n') => '\n',
-                    Some('t') => '\t',
-                    Some('r') => '\r',
-                    Some('\\') => '\\',
-                    Some('\'') => '\'',
-                    Some('0') => '\0',
-                    Some(c) => return Err(format!("invalid escape char '\\{}'", c)),
-                    None => return Err("unterminated char literal (in escape)".to_string()),
-                };
-                self.bump();
-                esc
+                self.parse_escape()?
             }
             Some(c) => {
                 self.bump();
@@ -294,6 +272,20 @@ impl Lexer {
 
     fn is_eof(&self) -> bool {
         self.pos >= self.chars.len()
+    }
+
+    fn parse_escape(&mut self) -> Result<char, String> {
+        match self.peek() {
+            Some('n') => { self.bump(); Ok('\n') }
+            Some('t') => { self.bump(); Ok('\t') }
+            Some('r') => { self.bump(); Ok('\r') }
+            Some('\\') => { self.bump(); Ok('\\') }
+            Some('"') => { self.bump(); Ok('"') }
+            Some('\'') => { self.bump(); Ok('\'') }
+            Some('0') => { self.bump(); Ok('\0') }
+            Some(c) => Err(format!("invalid escape char '\\{}'", c)),
+            None => Err("unterminated escape sequence".to_string()),
+        }
     }
 
     fn current_span(&self) -> Span {

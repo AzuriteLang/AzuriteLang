@@ -39,14 +39,7 @@ pub fn parse_expr(p: &mut Parser, min_bp: u8) -> Result<Expr, AzError> {
         match p.peek_kind() {
             Some(TokenKind::LParen) => {
                 p.advance();
-                let mut args = Vec::new();
-                loop {
-                    match p.peek_kind() {
-                        Some(TokenKind::RParen) | None => break,
-                        Some(TokenKind::Comma) => { p.advance(); }
-                        _ => { args.push(parse_expr(p, 0)?); }
-                    }
-                }
+                let args = parse_call_args(p)?;
                 p.expect(TokenKind::RParen, "')'")?;
                 lhs = Expr::Call { callee: Box::new(lhs), args };
             }
@@ -64,14 +57,7 @@ pub fn parse_expr(p: &mut Parser, min_bp: u8) -> Result<Expr, AzError> {
                 };
                 if p.peek_kind() == Some(TokenKind::LParen) {
                     p.advance();
-                    let mut args = Vec::new();
-                    loop {
-                        match p.peek_kind() {
-                            Some(TokenKind::RParen) | None => break,
-                            Some(TokenKind::Comma) => { p.advance(); }
-                            _ => { args.push(parse_expr(p, 0)?); }
-                        }
-                    }
+                    let args = parse_call_args(p)?;
                     p.expect(TokenKind::RParen, "')'")?;
                     lhs = Expr::MethodCall { obj: Box::new(lhs), method: field, args };
                 } else {
@@ -108,6 +94,18 @@ pub fn parse_block(p: &mut Parser) -> Result<Expr, AzError> {
     }
     p.expect(TokenKind::RBrace, "'}'")?;
     Ok(Expr::Block(stmts))
+}
+
+fn parse_call_args(p: &mut Parser) -> Result<Vec<Expr>, AzError> {
+    let mut args = Vec::new();
+    loop {
+        match p.peek_kind() {
+            Some(TokenKind::RParen) | None => break,
+            Some(TokenKind::Comma) => { p.advance(); }
+            _ => { args.push(parse_expr(p, 0)?); }
+        }
+    }
+    Ok(args)
 }
 
 fn parse_array(p: &mut Parser) -> Result<Expr, AzError> {

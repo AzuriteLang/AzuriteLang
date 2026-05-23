@@ -198,9 +198,11 @@ fn compile_abs<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValue
 fn compile_len<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
     let val = cg.compile_expr(&args[0])?;
     let ptr = val.into_pointer_value();
-    let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
-    let strlen_ty = cg.context.i64_type().fn_type(&[ptr_ty.into()], false);
-    cg.module.add_function("strlen", strlen_ty, None);
+    if cg.module.get_function("strlen").is_none() {
+        let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
+        let strlen_ty = cg.context.i64_type().fn_type(&[ptr_ty.into()], false);
+        cg.module.add_function("strlen", strlen_ty, None);
+    }
     let len = cg.builder.build_call(cg.module.get_function("strlen").unwrap(), &[ptr.into()], "len").unwrap();
     Ok(match len.try_as_basic_value() { inkwell::values::ValueKind::Basic(bv) => bv, _ => cg.context.i64_type().const_zero().into() })
 }

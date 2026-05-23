@@ -10,7 +10,7 @@ fn is_bool_expr(expr: &Expr) -> bool {
         Expr::Unary { op: UnOp::Not, .. } => true,
         Expr::Call { callee, .. } => {
             if let Expr::Ident(i) = callee.as_ref() {
-                matches!(i.name.as_str(), "is_prime" | "has_xxx" /* add known bool funcs */)
+                i.name == "has"
             } else { false }
         }
         _ => false,

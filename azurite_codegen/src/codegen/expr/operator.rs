@@ -77,9 +77,22 @@ fn compile_string_concat<'ctx>(cg: &CodeGen<'ctx>, l: inkwell::values::PointerVa
     let i64_ty = cg.context.i64_type();
     let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
 
-    let strlen_ty = i64_ty.fn_type(&[ptr_ty.into()], false); cg.module.add_function("strlen", strlen_ty, None);
-    let strcpy_ty = ptr_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], false); cg.module.add_function("strcpy", strcpy_ty, None);
-    let strcat_ty = ptr_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], false); cg.module.add_function("strcat", strcat_ty, None);
+    if cg.module.get_function("strlen").is_none() {
+        let strlen_ty = i64_ty.fn_type(&[ptr_ty.into()], false);
+        cg.module.add_function("strlen", strlen_ty, None);
+    }
+    if cg.module.get_function("strcpy").is_none() {
+        let strcpy_ty = ptr_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], false);
+        cg.module.add_function("strcpy", strcpy_ty, None);
+    }
+    if cg.module.get_function("strcat").is_none() {
+        let strcat_ty = ptr_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], false);
+        cg.module.add_function("strcat", strcat_ty, None);
+    }
+    if cg.module.get_function("malloc").is_none() {
+        let malloc_ty = ptr_ty.fn_type(&[i64_ty.into()], false);
+        cg.module.add_function("malloc", malloc_ty, None);
+    }
 
     let strlen = cg.module.get_function("strlen").unwrap();
     let ll = cg.builder.build_call(strlen, &[l.into()], "llen").unwrap().try_as_basic_value().unwrap_basic().into_int_value();
@@ -87,7 +100,6 @@ fn compile_string_concat<'ctx>(cg: &CodeGen<'ctx>, l: inkwell::values::PointerVa
     let total = cg.builder.build_int_add(ll, lr, "tot").unwrap();
     let size = cg.builder.build_int_add(total, i64_ty.const_int(1, false), "sz").unwrap();
 
-    let malloc_ty = ptr_ty.fn_type(&[i64_ty.into()], false); cg.module.add_function("malloc", malloc_ty, None);
     let buf = cg.builder.build_call(cg.module.get_function("malloc").unwrap(), &[size.into()], "buf").unwrap()
         .try_as_basic_value().unwrap_basic().into_pointer_value();
 

@@ -346,15 +346,12 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub fn az_param_type(&self, type_: &Option<azurite_parser::ast::Type>) -> BasicMetadataTypeEnum<'ctx> {
         match type_ {
-            Some(azurite_parser::ast::Type::Name(n)) if n == "string" => self.context.ptr_type(inkwell::AddressSpace::default()).into(),
-            Some(azurite_parser::ast::Type::Name(n)) if n == "int" => self.context.i64_type().into(),
-            Some(azurite_parser::ast::Type::Name(n)) if n == "float" => self.context.f64_type().into(),
-            Some(azurite_parser::ast::Type::Name(n)) if n == "bool" => self.context.i64_type().into(),
-            _ => self.context.i64_type().into(),
+            Some(t) => self.type_to_llvm(t).into(),
+            None => self.context.i64_type().into(),
         }
     }
 
-    pub fn field_type_to_llvm(&self, type_: &azurite_parser::ast::Type) -> BasicTypeEnum<'ctx> {
+    pub fn type_to_llvm(&self, type_: &azurite_parser::ast::Type) -> BasicTypeEnum<'ctx> {
         match type_ {
             azurite_parser::ast::Type::Name(n) if n == "string" => self.context.ptr_type(inkwell::AddressSpace::default()).into(),
             azurite_parser::ast::Type::Name(n) if n == "int" => self.context.i64_type().into(),
@@ -362,5 +359,9 @@ impl<'ctx> CodeGen<'ctx> {
             azurite_parser::ast::Type::Name(n) if n == "bool" => self.context.i64_type().into(),
             _ => self.context.i64_type().into(),
         }
+    }
+
+    pub fn field_type_to_llvm(&self, type_: &azurite_parser::ast::Type) -> BasicTypeEnum<'ctx> {
+        self.type_to_llvm(type_)
     }
 }

@@ -1,11 +1,7 @@
 use azurite_lexer::{Lexer, TokenKind};
 use azurite_parser::ast::*;
 use azurite_parser::Parser;
-
-fn parse_prog(src: &str) -> Program {
-    let tokens = Lexer::new(src).tokenize().unwrap();
-    Parser::new(tokens).parse_program().unwrap()
-}
+use azurite_test::parse_prog;
 
 #[test]
 fn test_class_declaration() {

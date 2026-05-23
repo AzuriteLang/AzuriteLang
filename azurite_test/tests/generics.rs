@@ -1,12 +1,4 @@
-use azurite_checker::Checker;
-use azurite_lexer::Lexer;
-use azurite_parser::Parser;
-
-fn check(src: &str) -> Result<(), Vec<azurite_errors::AzError>> {
-    let tokens = Lexer::new(src).tokenize().unwrap();
-    let prog = Parser::new(tokens).parse_program().unwrap();
-    Checker::new().check_program(&prog)
-}
+use azurite_test::{check, parse_prog};
 
 #[test]
 fn test_generic_box_new_int() {
