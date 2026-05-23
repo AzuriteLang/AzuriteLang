@@ -19,7 +19,7 @@ func main() {
 - **Arrays** with heap allocation
 - **Generics** (generic classes)
 - **Package manager** — git dependencies with `azurite.toml`
-- **Standard library** — `string`, `math`, `random` libs on GitHub
+- **Standard library** — `string`, `math`, `random`, `color` libs on GitHub
 
 ## Quick Start
 
@@ -103,7 +103,7 @@ azurite install math --git https://...  # custom git URL
 azurite install mylib --path ./libs     # local path
 ```
 
-The registry currently knows: `string`, `math`, `random`.
+The registry currently knows: `string`, `math`, `random`, `color`.
 
 ## Imports
 
@@ -170,6 +170,21 @@ random = { git = "https://github.com/AzuriteLang/random" }
 | `random_bool()` | `true` or `false` |
 | `random_range(lo, hi)` | Integer in `[lo, hi]` |
 | `roll_dice(sides)` | `random_range(1, sides)` |
+
+### `color` — [`github.com/AzuriteLang/color`](https://github.com/AzuriteLang/color)
+
+```toml
+[dependencies]
+color = { git = "https://github.com/AzuriteLang/color" }
+```
+
+| Category | Functions |
+|---|---|
+| **Class** | `Color{r,g,b}` with `.to_hex()`, `.brightness()`, `.lerp()`, `.blend()`, `.fg()`, `.bg()` |
+| **Parse** | `from_hex(hex)` |
+| **Constants** | `red()`, `green()`, `blue()`, `white()`, `black()`, `yellow()`, `cyan()`, `magenta()`, `orange()`, `pink()` |
+| **ANSI styles** | `reset_color()`, `bold()`, `dim()`, `italic()`, `underline()` |
+| **ANSI colors** | `fg(r,g,b)`, `bg(r,g,b)`, `fg_hex(hex)`, `bg_hex(hex)` |
 
 Built-in math functions (no import needed): `sqrt`, `abs`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `exp`, `expm1`, `log`, `log2`, `log10`, `pow`, `hypot`, `fmod`, `copysign`, `floor`, `ceil`.
 

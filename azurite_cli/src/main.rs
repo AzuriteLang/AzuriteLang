@@ -25,6 +25,8 @@ enum Cli {
         file: PathBuf,
         #[arg(short, long, help = "Output file path")]
         output: Option<PathBuf>,
+        #[arg(long, help = "Keep .ll file after compilation")]
+        keep_ll: bool,
     },
     #[command(about = "Interactive REPL")]
     Repl,
@@ -50,7 +52,7 @@ fn main() {
 
     let result = match &cli {
         Cli::Check { file } => cmd_check(file),
-        Cli::Build { file, output } => cmd_build(file, output.as_ref()),
+        Cli::Build { file, output, keep_ll } => cmd_build(file, output.as_ref(), *keep_ll),
         Cli::Repl => cmd_repl(),
         Cli::Init { dir } => cmd_init(dir),
         Cli::Install { name, git, path, rev } => cmd_install(name, git.as_deref(), path.as_deref(), rev.as_deref()),
@@ -267,7 +269,7 @@ fn cmd_check(file: &PathBuf) -> Result<(), String> {
     }
 }
 
-fn cmd_build(file: &PathBuf, output: Option<&PathBuf>) -> Result<(), String> {
+fn cmd_build(file: &PathBuf, output: Option<&PathBuf>, keep_ll: bool) -> Result<(), String> {
     let (program, _source) = resolve_main(file)?;
 
     #[cfg(feature = "llvm")]
@@ -293,7 +295,7 @@ fn cmd_build(file: &PathBuf, output: Option<&PathBuf>) -> Result<(), String> {
         cmd.args([&ll_path.to_string_lossy(), "-o", &exe.to_string_lossy()]);
         cmd.args(["-Wl,/defaultlib:msvcrt", "-Wl,/defaultlib:oldnames"]);
         let clang_ok = match cmd.status() {
-            Ok(s) if s.success() => { std::fs::remove_file(&ll_path).ok(); true }
+            Ok(s) if s.success() => { if !keep_ll { std::fs::remove_file(&ll_path).ok(); } true }
             _ => false,
         };
         if clang_ok {
