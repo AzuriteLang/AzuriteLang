@@ -185,3 +185,56 @@ fn test_compound_assign_shift() {
     assert!(check("func main() { let x = 1 x <<= 2 }").is_ok());
     assert!(check("func main() { let x = 8 x >>= 1 }").is_ok());
 }
+
+// ===== str(float) conversion =====
+
+#[test]
+fn test_str_float_basic() {
+    assert!(check("func main() { let s = str(3.14) }").is_ok());
+}
+
+#[test]
+fn test_str_float_integer_value() {
+    assert!(check("func main() { let s = str(42.0) }").is_ok());
+}
+
+#[test]
+fn test_str_float_negative() {
+    assert!(check("func main() { let s = str(-2.5) }").is_ok());
+}
+
+// ===== ++ and -- operators =====
+
+#[test]
+fn test_increment_lexer() {
+    let tokens = azurite_lexer::Lexer::new("++").tokenize().unwrap();
+    assert_eq!(tokens[0].kind.to_string(), "++");
+}
+
+#[test]
+fn test_decrement_lexer() {
+    let tokens = azurite_lexer::Lexer::new("--").tokenize().unwrap();
+    assert_eq!(tokens[0].kind.to_string(), "--");
+}
+
+#[test]
+fn test_plusplus_lexer_versus_plusassign() {
+    let tokens = azurite_lexer::Lexer::new("++ +=").tokenize().unwrap();
+    let kinds: Vec<String> = tokens.iter().map(|t| t.kind.to_string()).collect();
+    assert_eq!(kinds, ["++", "+=", "EOF"]);
+}
+
+#[test]
+fn test_increment_pre() {
+    assert!(check("func main() { let x = 5 ++x print(x) }").is_ok());
+}
+
+#[test]
+fn test_decrement_pre() {
+    assert!(check("func main() { let x = 5 --x print(x) }").is_ok());
+}
+
+#[test]
+fn test_increment_decrement_chain() {
+    assert!(check("func main() { let x = 10 ++x --x print(x) }").is_ok());
+}

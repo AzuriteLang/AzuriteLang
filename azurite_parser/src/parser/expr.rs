@@ -31,6 +31,19 @@ pub fn parse_expr(p: &mut Parser, min_bp: u8) -> Result<Expr, AzError> {
             let ((), r_bp) = parser::prefix_binding_power(op);
             Expr::Unary { op, operand: Box::new(parse_expr(p, r_bp)?) }
         }
+        Some(TokenKind::PlusPlus) | Some(TokenKind::MinusMinus) => {
+            let is_plus = matches!(p.peek_kind(), Some(TokenKind::PlusPlus));
+            p.advance();
+            let operand = parse_expr(p, 9)?;
+            let one = Box::new(Expr::Int(1));
+            if is_plus {
+                let add = Box::new(Expr::Binary { left: Box::new(operand.clone()), op: BinOp::Add, right: one });
+                Expr::Binary { left: Box::new(operand), op: BinOp::Assign, right: add }
+            } else {
+                let sub = Box::new(Expr::Binary { left: Box::new(operand.clone()), op: BinOp::Sub, right: one });
+                Expr::Binary { left: Box::new(operand), op: BinOp::Assign, right: sub }
+            }
+        }
         Some(ref other) => return Err(p.err(format!("unexpected token: {}", other))),
         None => return Err(p.err("unexpected end of input")),
     };

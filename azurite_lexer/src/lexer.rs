@@ -88,7 +88,11 @@ impl Lexer {
             '\'' => self.read_char(),
             'a'..='z' | 'A'..='Z' | '_' => self.read_identifier_or_keyword(),
             '+' => {
-                if self.peek_next() == Some('=') {
+                if self.peek_next() == Some('+') {
+                    self.bump();
+                    self.bump();
+                    Ok(Token::new(TokenKind::PlusPlus, self.prev_span(2)))
+                } else if self.peek_next() == Some('=') {
                     self.bump();
                     self.bump();
                     Ok(Token::new(TokenKind::PlusAssign, self.prev_span(2)))
@@ -97,7 +101,11 @@ impl Lexer {
                 }
             }
             '-' => {
-                if self.peek_next() == Some('=') {
+                if self.peek_next() == Some('-') {
+                    self.bump();
+                    self.bump();
+                    Ok(Token::new(TokenKind::MinusMinus, self.prev_span(2)))
+                } else if self.peek_next() == Some('=') {
                     self.bump();
                     self.bump();
                     Ok(Token::new(TokenKind::MinusAssign, self.prev_span(2)))

@@ -471,8 +471,20 @@ fn compile_str<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValue
     match val {
         BasicValueEnum::PointerValue(p) => return Ok(p.into()),
         BasicValueEnum::FloatValue(f) => {
-            // For float, fall back to a simple int-cast approach
-            return Ok(cg.builder.build_global_string_ptr("<float>", "float_fmt").unwrap().as_pointer_value().into());
+            let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
+            let buf = cg.builder.build_array_alloca(i8_ty, i64_ty.const_int(64, false), "str_buf").unwrap();
+            // Use sprintf (now linked via legacy_stdio_definitions.lib)
+            if cg.module.get_function("sprintf").is_none() {
+                let ft = i64_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], true);
+                cg.module.add_function("sprintf", ft, None);
+            }
+            let fmt = cg.builder.build_global_string_ptr("%g", "floatfmt").unwrap();
+            cg.builder.build_call(
+                cg.module.get_function("sprintf").unwrap(),
+                &[buf.into(), fmt.as_pointer_value().into(), f.into()],
+                "float_to_str"
+            ).unwrap();
+            return Ok(buf.into());
         }
         _ => {}
     }

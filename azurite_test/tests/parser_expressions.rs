@@ -80,14 +80,15 @@ fn test_unary_not() {
 }
 
 #[test]
-fn test_double_neg() {
-    let prog = parse("--5");
+fn test_decrement_parse() {
+    let prog = parse("--x");
     match &prog.statements[0] {
-        Stmt::Expr(Expr::Unary { op, operand }) => {
-            assert_eq!(*op, UnOp::Neg);
-            assert!(matches!(operand.as_ref(), Expr::Unary { op: UnOp::Neg, .. }));
+        Stmt::Expr(Expr::Binary { left, op, right }) => {
+            assert_eq!(*op, BinOp::Assign);
+            assert!(matches!(left.as_ref(), Expr::Ident(_)));
+            assert!(matches!(right.as_ref(), Expr::Binary { op: BinOp::Sub, .. }));
         }
-        _ => panic!("expected double neg"),
+        _ => panic!("expected decrement desugar"),
     }
 }
 

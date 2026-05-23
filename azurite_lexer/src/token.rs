@@ -69,7 +69,9 @@ pub enum TokenKind {
 
     // Operators
     Plus,
+    PlusPlus,
     Minus,
+    MinusMinus,
     Star,
     Slash,
     Percent,
@@ -157,7 +159,9 @@ impl fmt::Display for TokenKind {
             TokenKind::Char(c) => write!(f, "'{}'", c),
             TokenKind::Ident(s) => write!(f, "{}", s),
             TokenKind::Plus => write!(f, "+"),
+            TokenKind::PlusPlus => write!(f, "++"),
             TokenKind::Minus => write!(f, "-"),
+            TokenKind::MinusMinus => write!(f, "--"),
             TokenKind::Star => write!(f, "*"),
             TokenKind::Slash => write!(f, "/"),
             TokenKind::Percent => write!(f, "%"),

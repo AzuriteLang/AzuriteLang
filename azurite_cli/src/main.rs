@@ -376,7 +376,7 @@ fn cmd_build(file: &PathBuf, output: Option<&PathBuf>, keep_ll: bool) -> Result<
 
         let mut cmd = std::process::Command::new(clang);
         cmd.args([&ll_path.to_string_lossy(), "-o", &exe.to_string_lossy()]);
-        cmd.args(["-Wl,/defaultlib:msvcrt", "-Wl,/defaultlib:oldnames"]);
+        cmd.args(["-Wl,/defaultlib:msvcrt", "-Wl,/defaultlib:oldnames", "-Wl,/defaultlib:legacy_stdio_definitions"]);
         let clang_ok = match cmd.status() {
             Ok(s) if s.success() => { if !keep_ll { std::fs::remove_file(&ll_path).ok(); } true }
             _ => false,
