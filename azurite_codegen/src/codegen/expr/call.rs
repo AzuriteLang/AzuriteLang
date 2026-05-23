@@ -45,6 +45,8 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                 "hypot" => return compile_math2(cg, "hypot", args),
                 "fmod" => return compile_math2(cg, "fmod", args),
                 "copysign" => return compile_math2(cg, "copysign", args),
+                "rand" => return compile_rand(cg, args),
+                "srand" => return compile_srand(cg, args),
                 _ => {}
             }
             let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
@@ -334,6 +336,34 @@ fn compile_math2<'ctx>(cg: &mut CodeGen<'ctx>, name: &str, args: &[Expr]) -> Res
     };
     let result = cg.builder.build_call(func, &[fa.into(), fb.into()], name).unwrap();
     Ok(match result.try_as_basic_value() { inkwell::values::ValueKind::Basic(bv) => bv, _ => f64_ty.const_float(0.0).into() })
+}
+
+fn compile_rand<'ctx>(cg: &mut CodeGen<'ctx>, _args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let i32_ty = cg.context.i32_type();
+    let ft = i32_ty.fn_type(&[], false);
+    let func = match cg.module.get_function("rand") {
+        Some(f) => f,
+        None => cg.module.add_function("rand", ft, None),
+    };
+    let result = cg.builder.build_call(func, &[], "rand").unwrap();
+    let val = match result.try_as_basic_value() {
+        inkwell::values::ValueKind::Basic(bv) => bv.into_int_value(),
+        _ => i32_ty.const_zero(),
+    };
+    // Zero-extend i32 to i64
+    Ok(cg.builder.build_int_z_extend(val, cg.context.i64_type(), "rand_ext").unwrap().into())
+}
+
+fn compile_srand<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let val = cg.compile_expr(&args[0])?.into_int_value();
+    let seed = cg.builder.build_int_truncate(val, cg.context.i32_type(), "seed_trunc").unwrap();
+    let ft = cg.context.void_type().fn_type(&[cg.context.i32_type().into()], false);
+    let func = match cg.module.get_function("srand") {
+        Some(f) => f,
+        None => cg.module.add_function("srand", ft, None),
+    };
+    cg.builder.build_call(func, &[seed.into()], "srand").unwrap();
+    Ok(cg.context.i64_type().const_zero().into())
 }
 
 fn subst_type_multi(ty: &Type, type_params: &[String], concrete_types: &[String]) -> Type {

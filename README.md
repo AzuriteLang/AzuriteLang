@@ -19,7 +19,7 @@ func main() {
 - **Arrays** with heap allocation
 - **Generics** (generic classes)
 - **Package manager** — git dependencies with `azurite.toml`
-- **Standard library** — `string` and `math` libs on GitHub
+- **Standard library** — `string`, `math`, `random` libs on GitHub
 
 ## Quick Start
 
@@ -103,7 +103,7 @@ azurite install math --git https://...  # custom git URL
 azurite install mylib --path ./libs     # local path
 ```
 
-The registry currently knows: `string`, `math`.
+The registry currently knows: `string`, `math`, `random`.
 
 ## Imports
 
@@ -154,6 +154,22 @@ math = { git = "https://github.com/AzuriteLang/math" }
 | **Clamp** | `clamp_int`, `clamp_float`, `min_int`, `max_int`, `min_float`, `max_float` |
 | **Interpolation** | `lerp` |
 | **Sign** | `sign_int` |
+
+### `random` — [`github.com/AzuriteLang/random`](https://github.com/AzuriteLang/random)
+
+```toml
+[dependencies]
+random = { git = "https://github.com/AzuriteLang/random" }
+```
+
+| Function | Description |
+|---|---|
+| `seed(n)` | Seed the RNG |
+| `random_int()` | Random integer |
+| `random_float()` | Float in `[0, 1)` |
+| `random_bool()` | `true` or `false` |
+| `random_range(lo, hi)` | Integer in `[lo, hi]` |
+| `roll_dice(sides)` | `random_range(1, sides)` |
 
 Built-in math functions (no import needed): `sqrt`, `abs`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `exp`, `expm1`, `log`, `log2`, `log10`, `pow`, `hypot`, `fmod`, `copysign`, `floor`, `ceil`.
 
@@ -260,6 +276,8 @@ floor(x)           // round down (float)
 ceil(x)            // round up (float)
 read()             // read stdin
 input(prompt)      // read with prompt
+rand()             // random integer (C rand)
+srand(seed)        // seed the RNG
 exit(code)         // exit program
 ```
 

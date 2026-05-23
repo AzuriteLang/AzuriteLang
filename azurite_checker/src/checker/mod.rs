@@ -66,6 +66,8 @@ impl Checker {
             ("hypot", Type::Func { params: vec![Type::Float, Type::Float], ret: Box::new(Type::Float) }),
             ("fmod", Type::Func { params: vec![Type::Float, Type::Float], ret: Box::new(Type::Float) }),
             ("copysign", Type::Func { params: vec![Type::Float, Type::Float], ret: Box::new(Type::Float) }),
+            ("rand", Type::Func { params: vec![], ret: Box::new(Type::Int) }),
+            ("srand", Type::Func { params: vec![Type::Int], ret: Box::new(Type::Void) }),
         ];
         for (name, type_) in builtins {
             self.scope.insert(name, Symbol {

@@ -127,6 +127,7 @@ fn registry_url(name: &str) -> Option<String> {
     let known: &[(&str, &str)] = &[
         ("string", "https://github.com/AzuriteLang/string"),
         ("math", "https://github.com/AzuriteLang/math"),
+        ("random", "https://github.com/AzuriteLang/random"),
     ];
     known.iter().find(|(n, _)| *n == name).map(|(_, u)| u.to_string())
 }
