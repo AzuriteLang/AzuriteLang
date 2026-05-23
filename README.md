@@ -155,7 +155,7 @@ math = { git = "https://github.com/AzuriteLang/math" }
 | **Interpolation** | `lerp` |
 | **Sign** | `sign_int` |
 
-Built-in math functions (no import needed): `sqrt`, `abs`, `sin`, `cos`, `tan`, `pow`, `log`, `log10`.
+Built-in math functions (no import needed): `sqrt`, `abs`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `exp`, `expm1`, `log`, `log2`, `log10`, `pow`, `hypot`, `fmod`, `copysign`, `floor`, `ceil`.
 
 ## Language Syntax
 

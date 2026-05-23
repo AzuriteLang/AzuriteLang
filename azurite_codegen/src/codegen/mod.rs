@@ -129,10 +129,19 @@ impl<'ctx> CodeGen<'ctx> {
                         if ret_is_string {
                             self.builder.build_return(Some(&v)).unwrap();
                         } else if ret_is_float {
-                            self.builder.build_return(Some(&v)).unwrap();
+                            match v {
+                                BasicValueEnum::IntValue(i) => {
+                                    let f: BasicValueEnum = self.builder.build_signed_int_to_float(i, self.context.f64_type(), "i2f").unwrap().into();
+                                    self.builder.build_return(Some(&f)).unwrap();
+                                }
+                                _ => { self.builder.build_return(Some(&v)).unwrap(); }
+                            }
                         } else {
                             self.builder.build_return(Some(&self.any_to_i64(v))).unwrap();
                         }
+                    } else if ret_is_float {
+                        let f0: BasicValueEnum = self.context.f64_type().const_float(0.0).into();
+                        self.builder.build_return(Some(&f0)).unwrap();
                     } else {
                         self.builder.build_return(Some(&self.context.i64_type().const_zero())).unwrap();
                     }

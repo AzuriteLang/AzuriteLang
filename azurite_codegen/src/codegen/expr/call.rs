@@ -32,6 +32,19 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                 "floor" => return compile_math1(cg, "floor", args),
                 "ceil" => return compile_math1(cg, "ceil", args),
                 "pow" => return compile_math2(cg, "pow", args),
+                "asin" => return compile_math1(cg, "asin", args),
+                "acos" => return compile_math1(cg, "acos", args),
+                "atan" => return compile_math1(cg, "atan", args),
+                "atan2" => return compile_math2(cg, "atan2", args),
+                "sinh" => return compile_math1(cg, "sinh", args),
+                "cosh" => return compile_math1(cg, "cosh", args),
+                "tanh" => return compile_math1(cg, "tanh", args),
+                "exp" => return compile_math1(cg, "exp", args),
+                "expm1" => return compile_math1(cg, "expm1", args),
+                "log2" => return compile_math1(cg, "log2", args),
+                "hypot" => return compile_math2(cg, "hypot", args),
+                "fmod" => return compile_math2(cg, "fmod", args),
+                "copysign" => return compile_math2(cg, "copysign", args),
                 _ => {}
             }
             let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;

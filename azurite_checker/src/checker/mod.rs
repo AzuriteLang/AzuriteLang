@@ -53,6 +53,19 @@ impl Checker {
             ("log10", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
             ("floor", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
             ("ceil", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
+            ("asin", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
+            ("acos", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
+            ("atan", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
+            ("atan2", Type::Func { params: vec![Type::Float, Type::Float], ret: Box::new(Type::Float) }),
+            ("sinh", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
+            ("cosh", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
+            ("tanh", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
+            ("exp", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
+            ("expm1", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
+            ("log2", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),
+            ("hypot", Type::Func { params: vec![Type::Float, Type::Float], ret: Box::new(Type::Float) }),
+            ("fmod", Type::Func { params: vec![Type::Float, Type::Float], ret: Box::new(Type::Float) }),
+            ("copysign", Type::Func { params: vec![Type::Float, Type::Float], ret: Box::new(Type::Float) }),
         ];
         for (name, type_) in builtins {
             self.scope.insert(name, Symbol {

@@ -17,9 +17,16 @@ pub fn compile_operator<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<Bas
             let val = cg.compile_expr(operand)?;
             match op {
                 UnOp::Neg => {
-                    let zero = cg.context.i64_type().const_zero();
-                    let i = val.into_int_value();
-                    Ok(cg.builder.build_int_sub(zero, i, "negtmp").unwrap().into())
+                    match val {
+                        BasicValueEnum::IntValue(i) => {
+                            let zero = cg.context.i64_type().const_zero();
+                            Ok(cg.builder.build_int_sub(zero, i, "negtmp").unwrap().into())
+                        }
+                        BasicValueEnum::FloatValue(f) => {
+                            Ok(cg.builder.build_float_neg(f, "negftmp").unwrap().into())
+                        }
+                        _ => return Err(AzError::new(ErrorKind::Semantic, Span::new(0, 0, 0, 0), "cannot negate this type")),
+                    }
                 }
                 UnOp::Not => {
                     let i = val.into_int_value();

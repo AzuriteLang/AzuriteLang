@@ -45,3 +45,4 @@
 - L'IA ne doit jamais supprimer de code existant sans explication.
 - L'IA doit proposer des tests pour toute nouvelle fonctionnalité.
 - L'IA doit suivre la structure workspace : ne pas ajouter de dépendances à un crate sans raison valable.
+- L'IA doit mettre à jour le README du projet principal (`README.md`) et le README des libs concernées (`string`, `math`, etc.) à chaque ajout ou modification significative. Le README reflète l'état actuel des fonctionnalités, des builtins, et des libs standard.
