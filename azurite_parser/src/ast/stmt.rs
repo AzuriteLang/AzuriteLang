@@ -48,6 +48,8 @@ pub enum Stmt {
     Return {
         value: Option<Box<Expr>>,
     },
+    Break,
+    Continue,
     Import {
         path: String,
         span: azurite_lexer::Span,

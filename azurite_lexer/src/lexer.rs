@@ -231,6 +231,8 @@ impl Lexer {
             "for" => TokenKind::For,
             "match" => TokenKind::Match,
             "return" => TokenKind::Return,
+            "break" => TokenKind::Break,
+            "continue" => TokenKind::Continue,
             "import" => TokenKind::Import,
             "struct" => TokenKind::Struct,
             "enum" => TokenKind::Enum,

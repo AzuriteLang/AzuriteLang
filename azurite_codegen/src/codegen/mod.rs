@@ -12,6 +12,7 @@ use inkwell::module::Module;
 use inkwell::types::{BasicMetadataTypeEnum, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue, IntValue, PointerValue};
 use inkwell::IntPredicate;
+use inkwell::basic_block::BasicBlock;
 
 pub struct ClassInfo<'ctx> {
     pub field_names: Vec<String>,
@@ -34,6 +35,7 @@ pub struct CodeGen<'ctx> {
     pub current_class: Option<String>,
     pub printf: Option<FunctionValue<'ctx>>,
     pub putchar: Option<FunctionValue<'ctx>>,
+    pub loop_stack: Vec<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -52,6 +54,7 @@ impl<'ctx> CodeGen<'ctx> {
             current_class: None,
             printf: None,
             putchar: None,
+            loop_stack: Vec::new(),
         }
     }
 
@@ -149,6 +152,7 @@ impl<'ctx> CodeGen<'ctx> {
 
                         let cond_bb = self.context.append_basic_block(cf, "for_cond");
                         let body_bb = self.context.append_basic_block(cf, "for_body");
+                        let inc_bb = self.context.append_basic_block(cf, "for_inc");
                         let after_bb = self.context.append_basic_block(cf, "for_after");
                         self.builder.build_unconditional_branch(cond_bb).unwrap();
                         self.builder.position_at_end(cond_bb);
@@ -159,14 +163,16 @@ impl<'ctx> CodeGen<'ctx> {
                         ).unwrap();
                         self.builder.build_conditional_branch(cmp, body_bb, after_bb).unwrap();
                         self.builder.position_at_end(body_bb);
+                        self.loop_stack.push((inc_bb, after_bb));
                         self.compile_block_stmts(body, false)?;
-                        if !self.has_terminator() {
-                            let i_next = self.builder.build_load(i64_ty, i_ptr, "i").unwrap();
-                            let one = i64_ty.const_int(1, false);
-                            let i_inc = self.builder.build_int_add(i_next.into_int_value(), one, "iinc").unwrap();
-                            self.builder.build_store(i_ptr, i_inc).unwrap();
-                            self.builder.build_unconditional_branch(cond_bb).unwrap();
-                        }
+                        self.loop_stack.pop();
+                        if !self.has_terminator() { self.builder.build_unconditional_branch(inc_bb).unwrap(); }
+                        self.builder.position_at_end(inc_bb);
+                        let i_next = self.builder.build_load(i64_ty, i_ptr, "i").unwrap();
+                        let one = i64_ty.const_int(1, false);
+                        let i_inc = self.builder.build_int_add(i_next.into_int_value(), one, "iinc").unwrap();
+                        self.builder.build_store(i_ptr, i_inc).unwrap();
+                        self.builder.build_unconditional_branch(cond_bb).unwrap();
                         self.builder.position_at_end(after_bb);
                     }
                     // For each over array: for x in arr or for x in [1,2,3]
@@ -195,6 +201,7 @@ impl<'ctx> CodeGen<'ctx> {
 
                         let cond_bb = self.context.append_basic_block(cf, "for_cond");
                         let body_bb = self.context.append_basic_block(cf, "for_body");
+                        let inc_bb = self.context.append_basic_block(cf, "for_inc");
                         let after_bb = self.context.append_basic_block(cf, "for_after");
 
                         self.builder.build_unconditional_branch(cond_bb).unwrap();
@@ -213,13 +220,15 @@ impl<'ctx> CodeGen<'ctx> {
                         let var_ptr = self.create_entry_alloca(i64_ty.into(), &name.name);
                         self.builder.build_store(var_ptr, val).unwrap();
                         self.variables.insert(name.name.clone(), (var_ptr, i64_ty.into()));
+                        self.loop_stack.push((inc_bb, after_bb));
                         self.compile_block_stmts(body, false)?;
-                        if !self.has_terminator() {
-                            let i2 = self.builder.build_load(i64_ty, i_ptr, "i").unwrap();
-                            let inc = self.builder.build_int_add(i2.into_int_value(), i64_ty.const_int(1, false), "inc").unwrap();
-                            self.builder.build_store(i_ptr, inc).unwrap();
-                            self.builder.build_unconditional_branch(cond_bb).unwrap();
-                        }
+                        self.loop_stack.pop();
+                        if !self.has_terminator() { self.builder.build_unconditional_branch(inc_bb).unwrap(); }
+                        self.builder.position_at_end(inc_bb);
+                        let i2 = self.builder.build_load(i64_ty, i_ptr, "i").unwrap();
+                        let inc = self.builder.build_int_add(i2.into_int_value(), i64_ty.const_int(1, false), "inc").unwrap();
+                        self.builder.build_store(i_ptr, inc).unwrap();
+                        self.builder.build_unconditional_branch(cond_bb).unwrap();
                         self.builder.position_at_end(after_bb);
                     }
                 }
@@ -234,6 +243,18 @@ impl<'ctx> CodeGen<'ctx> {
                     self.builder.build_return(None).unwrap();
                     Ok(None)
                 }
+            }
+            Stmt::Break => {
+                if let Some((_, after_bb)) = self.loop_stack.last() {
+                    self.builder.build_unconditional_branch(*after_bb).unwrap();
+                }
+                Ok(None)
+            }
+            Stmt::Continue => {
+                if let Some((cond_bb, _)) = self.loop_stack.last() {
+                    self.builder.build_unconditional_branch(*cond_bb).unwrap();
+                }
+                Ok(None)
             }
             Stmt::Expr(expr) => {
                 let val = self.compile_expr(expr)?;
@@ -267,7 +288,9 @@ impl<'ctx> CodeGen<'ctx> {
                 let cond_int = self.to_bool(cond);
                 self.builder.build_conditional_branch(cond_int, body_bb, after_bb).unwrap();
                 self.builder.position_at_end(body_bb);
+                self.loop_stack.push((cond_bb, after_bb));
                 self.compile_block_stmts(body, false)?;
+                self.loop_stack.pop();
                 if !self.has_terminator() { self.builder.build_unconditional_branch(cond_bb).unwrap(); }
                 self.builder.position_at_end(after_bb);
                 Ok(Some(self.context.i64_type().const_zero().into()))

@@ -1,0 +1,7 @@
+class A { func foo(self) { print("A") } }
+class B : A { func foo(self) { super.foo(); print("B") } }
+
+func main() {
+    let b = B.new()
+    b.foo()
+}

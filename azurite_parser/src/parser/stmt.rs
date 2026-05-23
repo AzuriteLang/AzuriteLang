@@ -24,6 +24,8 @@ pub fn parse_stmt(p: &mut Parser) -> Result<Stmt, AzError> {
         Some(TokenKind::For) => parse_for(p),
         Some(TokenKind::Import) => parse_import(p),
         Some(TokenKind::Return) => parse_return(p),
+        Some(TokenKind::Break) => { p.advance(); p.expect_semicolon()?; Ok(Stmt::Break) }
+        Some(TokenKind::Continue) => { p.advance(); p.expect_semicolon()?; Ok(Stmt::Continue) }
         _ => {
             let e = expr::parse_expr(p, 0)?;
             p.expect_semicolon()?;

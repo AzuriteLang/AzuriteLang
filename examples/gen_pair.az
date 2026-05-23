@@ -1,0 +1,7 @@
+class Pair<A, B> { first: A second: B }
+
+func main() {
+    let p = Pair.new(42, 3.14)
+    print(p.first)
+    print(p.second)
+}

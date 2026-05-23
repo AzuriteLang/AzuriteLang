@@ -8,6 +8,8 @@ pub enum Type {
     Bool,
     Null,
     Void,
+    Instance { name: String },
+    Array(Box<Type>),
     Func {
         params: Vec<Type>,
         ret: Box<Type>,
@@ -23,6 +25,8 @@ impl fmt::Display for Type {
             Type::Bool => write!(f, "bool"),
             Type::Null => write!(f, "null"),
             Type::Void => write!(f, "void"),
+            Type::Instance { name } => write!(f, "{}", name),
+            Type::Array(elem) => write!(f, "{}[]", elem),
             Type::Func { params, ret } => {
                 let params: Vec<String> = params.iter().map(|p| p.to_string()).collect();
                 write!(f, "func({}) -> {}", params.join(", "), ret)

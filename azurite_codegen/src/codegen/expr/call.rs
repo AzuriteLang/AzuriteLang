@@ -44,17 +44,18 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                     let fn_name = format!("{}_{}", ident.name, method);
                     // Check if this is a generic class that needs instantiation
                     if cg.module.get_function(&fn_name).is_none() {
-                        if let Some((_tp, fields, methods)) = cg.generic_classes.get(&ident.name).cloned() {
-                            // Determine concrete type from first arg
-                            let concrete_suffix = if args.is_empty() { "void".to_string() } else {
-                                match &args[0] {
+                        if let Some((tp, fields, methods)) = cg.generic_classes.get(&ident.name).cloned() {
+                            // Determine concrete types from all args
+                            let concrete_types: Vec<String> = if args.is_empty() { vec!["void".to_string()] } else {
+                                args.iter().map(|a| match a {
                                     Expr::Int(_) => "int",
                                     Expr::Float(_) => "float",
                                     Expr::String(_) => "string",
                                     Expr::Bool(_) => "bool",
                                     _ => "any",
-                                }.to_string()
+                                }.to_string()).collect()
                             };
+                            let concrete_suffix = concrete_types.join("_");
                             let concrete_name = format!("{}_{}", ident.name, concrete_suffix);
                             // Add auto-generated 'new' method if not present
                             let has_new = methods.iter().any(|m| matches!(m, Stmt::Func { name: mn, .. } if mn.name == "new"));
@@ -64,7 +65,7 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                                 let mut m = methods.clone();
                                 let new_params: Vec<Param> = fields.iter().map(|f| Param {
                                     name: f.name.clone(),
-                                    type_annotation: Some(subst_type(&f.type_, "_T", &concrete_suffix)),
+                                    type_annotation: Some(subst_type_multi(&f.type_, &tp, &concrete_types)),
                                 }).collect();
                                 m.push(Stmt::Func {
                                     name: Ident { name: "new".to_string(), span: Span::new(0, 0, 1, 1) },
@@ -74,10 +75,10 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                                 });
                                 m
                             };
-                            // Substitute 'T' type in fields (actual name in AST type params may vary)
+                            // Substitute types in fields
                             let concrete_fields: Vec<ClassField> = fields.iter().map(|f| ClassField {
                                 name: f.name.clone(),
-                                type_: subst_type(&f.type_, "_T", &concrete_suffix),
+                                type_: subst_type_multi(&f.type_, &tp, &concrete_types),
                             }).collect();
                             // Compile the concrete class with concrete methods
                             let saved_fn = cg.function;
@@ -118,59 +119,81 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                 }
             }
             // Instance method call: instance.method(args)
-            let obj_val = cg.compile_expr(obj)?;
-            let obj_ptr = obj_val.into_pointer_value();
-            let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
-
-            // Try vtable dispatch first (for classes with inheritance)
-            for (class_name, info) in &cg.struct_types {
-                if info.has_vtable && info.methods.iter().any(|m| m == method) {
-                    let i64_ty = cg.context.i64_type();
-                    let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
-
-                    // Load vtable pointer from object (first field)
-                    let vptr_gep = unsafe { cg.builder.build_gep(i64_ty, obj_ptr, &[i64_ty.const_zero()], "vptr_gep").unwrap() };
-                    let vtable = cg.builder.build_load(ptr_ty, vptr_gep, "vtable").unwrap().into_pointer_value();
-
-                    // Calculate method index
-                    if let Some(idx) = info.methods.iter().position(|m| m == method) {
-                        let idx_val = i64_ty.const_int(idx as u64, false);
-                        let fn_ptr = unsafe { cg.builder.build_gep(ptr_ty, vtable, &[idx_val], "fn_ptr").unwrap() };
-                        let _fn_val = cg.builder.build_load(ptr_ty, fn_ptr, "fn").unwrap().into_pointer_value();
-
-                        // Cast to function pointer and call (simplified: load function by name)
-                        let fn_name = format!("{}_{}", class_name, method);
-                        if let Some(f) = cg.module.get_function(&fn_name) {
-                            let mut meta: Vec<BasicMetadataValueEnum> = vec![obj_val.into()];
-                            for a in &compiled { meta.push((*a).into()); }
-                            let result = cg.builder.build_call(f, &meta, "calltmp").unwrap();
-                            return Ok(match result.try_as_basic_value() {
-                                inkwell::values::ValueKind::Basic(bv) => bv,
-                                _ => cg.context.i64_type().const_zero().into(),
-                            });
+            // Handle super.method() directly
+            if let Expr::Super = obj.as_ref() {
+                if let Some(ref current) = cg.current_class {
+                    if let Some(info) = cg.struct_types.get(current) {
+                        if let Some(ref parent) = info.parent {
+                            let fn_name = format!("{}_{}", parent, method);
+                            if let Some(f) = cg.module.get_function(&fn_name) {
+                                let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
+                                let mut meta: Vec<BasicMetadataValueEnum> = vec![cg.builder.build_load(cg.context.ptr_type(inkwell::AddressSpace::default()), cg.self_ptr.unwrap(), "self").unwrap().into()];
+                                for a in &compiled { meta.push((*a).into()); }
+                                let result = cg.builder.build_call(f, &meta, "calltmp").unwrap();
+                                return Ok(match result.try_as_basic_value() {
+                                    inkwell::values::ValueKind::Basic(bv) => bv,
+                                    _ => cg.context.i64_type().const_zero().into(),
+                                });
+                            }
                         }
                     }
                 }
+                return Ok(cg.context.i64_type().const_zero().into());
             }
 
-            // Direct dispatch (for classes without inheritance)
+            let obj_val = cg.compile_expr(obj)?;
+            let compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
+
+            // Walk parent chain to find the most derived class with this method
+            let mut best_class: Option<(String, &crate::codegen::ClassInfo)> = None;
             for (class_name, info) in &cg.struct_types {
                 if info.methods.iter().any(|m| m == method) {
-                    let fn_name = format!("{}_{}", class_name, method);
-                    if let Some(f) = cg.module.get_function(&fn_name) {
-                        let mut meta: Vec<BasicMetadataValueEnum> = vec![obj_val.into()];
-                        for a in &compiled { meta.push((*a).into()); }
-                        let result = cg.builder.build_call(f, &meta, "calltmp").unwrap();
-                        return Ok(match result.try_as_basic_value() {
-                            inkwell::values::ValueKind::Basic(bv) => bv,
-                            _ => cg.context.i64_type().const_zero().into(),
-                        });
+                    let is_better = match &best_class {
+                        Some((best_name, _)) => {
+                            // class_name is better if best_name is an ancestor of class_name
+                            // (i.e., class_name is more derived than best_name)
+                            is_descendant(&cg.struct_types, &best_name, &info.parent)
+                                && info.parent.is_some()
+                        }
+                        None => true,
+                    };
+                    if is_better {
+                        best_class = Some((class_name.clone(), info));
                     }
                 }
             }
+
+            if let Some((class_name, _info)) = best_class {
+                let fn_name = format!("{}_{}", class_name, method);
+                if let Some(f) = cg.module.get_function(&fn_name) {
+                    let mut meta: Vec<BasicMetadataValueEnum> = vec![obj_val.into()];
+                    for a in &compiled { meta.push((*a).into()); }
+                    let result = cg.builder.build_call(f, &meta, "calltmp").unwrap();
+                    return Ok(match result.try_as_basic_value() {
+                        inkwell::values::ValueKind::Basic(bv) => bv,
+                        _ => cg.context.i64_type().const_zero().into(),
+                    });
+                }
+            }
+
             Ok(cg.context.i64_type().const_zero().into())
         }
         _ => unreachable!(),
+    }
+}
+
+/// Check if `child_name` is a descendant of `parent_name` in the class hierarchy
+fn is_descendant(struct_types: &std::collections::HashMap<String, crate::codegen::ClassInfo>, child_name: &str, parent_name: &Option<String>) -> bool {
+    match parent_name {
+        Some(p) if p == child_name => true,
+        Some(p) => {
+            if let Some(info) = struct_types.get(p) {
+                is_descendant(struct_types, child_name, &info.parent)
+            } else {
+                false
+            }
+        }
+        None => false,
     }
 }
 
@@ -250,18 +273,16 @@ fn compile_char_at<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicV
     Ok(cg.builder.build_int_z_extend(loaded.into_int_value(), cg.context.i64_type(), "ch_ext").unwrap().into())
 }
 
-fn subst_type(ty: &Type, _type_param: &str, _concrete: &str) -> Type {
+fn subst_type_multi(ty: &Type, type_params: &[String], concrete_types: &[String]) -> Type {
     match ty {
-        Type::Name(n) if n == "int" || n == "float" || n == "string" || n == "bool" || n == "void" || n == "none" => ty.clone(),
-        Type::Name(_) => {
-            match _concrete {
-                "int" => Type::Name("int".to_string()),
-                "float" => Type::Name("float".to_string()),
-                "string" => Type::Name("string".to_string()),
-                "bool" => Type::Name("bool".to_string()),
-                _ => Type::Name("int".to_string()),
+        Type::Name(n) => {
+            if let Some(idx) = type_params.iter().position(|p| p == n) {
+                let mapped = if idx < concrete_types.len() { concrete_types[idx].clone() } else { "int".to_string() };
+                Type::Name(mapped)
+            } else {
+                ty.clone()
             }
-        },
+        }
         _ => ty.clone(),
     }
 }

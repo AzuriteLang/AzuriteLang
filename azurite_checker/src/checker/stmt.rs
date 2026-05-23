@@ -27,16 +27,27 @@ pub fn check_stmt(c: &mut Checker, stmt: &Stmt) -> Option<Type> {
             type_
         }
         Stmt::Import { .. } | Stmt::Enum { .. } => None,
-        Stmt::Class { name, type_params, parent, fields, methods } => {
+        Stmt::Class { name, type_params, parent: _, fields, methods } => {
             if !type_params.is_empty() {
                 c.generic_classes.insert(name.name.clone(), (type_params.clone(), fields.clone(), methods.clone()));
                 return None;
             }
-            let all_methods = if let Some(parent_type) = parent {
-                if let azurite_parser::ast::Type::Name(_) = parent_type.as_ref() { methods.clone() }
-                else { methods.clone() }
-            } else { methods.clone() };
-            for method in &all_methods { check_stmt(c, method); }
+            let concrete_name = name.name.clone();
+            c.concrete_classes.insert(concrete_name.clone(), fields.clone());
+            for method in methods {
+                if let Stmt::Func { name: mname, params: mparams, return_type, .. } = method {
+                    let fn_name = format!("{}_{}", concrete_name, mname.name);
+                    let resolved_params: Vec<Type> = mparams.iter().filter(|p| p.name.name != "self").map(|p| {
+                        p.type_annotation.as_ref().and_then(|t| c.resolve_type(t)).unwrap_or(Type::Void)
+                    }).collect();
+                    let resolved_ret = return_type.as_ref().and_then(|t| c.resolve_type(t)).unwrap_or(Type::Void);
+                    let func_type = Type::Func { params: resolved_params, ret: Box::new(resolved_ret) };
+                    let fn_name_clone = fn_name.clone();
+                    c.scope.insert(&fn_name, Symbol { name: fn_name_clone, kind: SymbolKind::Function, type_: func_type })
+                        .unwrap_or_else(|e| c.error(name.span, e));
+                }
+            }
+            // Also register fields as a scope entry so field access can work
             None
         }
         Stmt::Func { name, params, return_type, body } => {
@@ -76,6 +87,12 @@ pub fn check_stmt(c: &mut Checker, stmt: &Stmt) -> Option<Type> {
             }
             val_type
         }
+        Stmt::Break | Stmt::Continue => {
+            if c.in_loop == 0 {
+                c.error(azurite_lexer::Span::new(0, 0, 0, 0), "'break'/'continue' outside loop".to_string());
+            }
+            None
+        }
         Stmt::If { condition, then_branch, else_branch } => {
             super::expr::check_expr(c, condition);
             super::expr::check_expr(c, then_branch);
@@ -83,8 +100,10 @@ pub fn check_stmt(c: &mut Checker, stmt: &Stmt) -> Option<Type> {
             None
         }
         Stmt::While { condition, body } => {
+            c.in_loop += 1;
             super::expr::check_expr(c, condition);
             super::expr::check_expr(c, body);
+            c.in_loop -= 1;
             None
         }
         Stmt::For { name, iterable, body } => {
@@ -92,7 +111,9 @@ pub fn check_stmt(c: &mut Checker, stmt: &Stmt) -> Option<Type> {
             c.scope.push();
             c.scope.insert(&name.name, Symbol { name: name.name.clone(), kind: SymbolKind::Variable, type_: Type::Int })
                 .unwrap_or_else(|e| c.error(name.span, e));
+            c.in_loop += 1;
             super::expr::check_expr(c, body);
+            c.in_loop -= 1;
             c.scope.pop();
             None
         }
