@@ -18,6 +18,12 @@ func main() {
 - **Enums** with data variants and pattern matching (`match`)
 - **Arrays** with heap allocation
 - **Generics** (generic classes)
+- **Tuples** with multi-return functions and destructuring `let (a, b) = f()`
+- **Varargs** — `..args` parameters
+- **Null-safe operator** `?.`
+- **String interpolation** `"Hello \{name}"`
+- **Exhaustive match checking** — missing enum variants are reported
+- **JIT REPL** — interactive execution with rustyline and LLVM JIT
 - **Package manager** — git dependencies with `azurite.toml`
 - **Standard library** — `string`, `math`, `random`, `color` libs on GitHub
 
@@ -306,7 +312,7 @@ azurite_codegen/    # LLVM IR codegen (feature-gated)
 azurite_errors/     # Error messages with spans
 azurite_resolver/   # Package/dependency resolver (azurite.toml)
 azurite_cli/        # CLI (check, build, repl, init)
-azurite_test/       # 270+ integration tests
+azurite_test/       # 320+ integration tests
 ```
 
 ## License
