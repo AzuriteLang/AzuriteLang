@@ -1,6 +1,7 @@
 use azurite_errors::{AzError, ErrorKind};
 use azurite_parser::ast::*;
 use inkwell::values::BasicValueEnum;
+use inkwell::types::BasicTypeEnum;
 use crate::codegen::CodeGen;
 
 pub fn compile_control<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicValueEnum<'ctx>, AzError> {
@@ -187,10 +188,30 @@ fn compile_array<'ctx>(cg: &mut CodeGen<'ctx>, elems: &[Expr]) -> Result<BasicVa
     let ptr = cg.builder.build_array_malloc(i64_ty, size, "arr").unwrap();
     for (i, elem) in elems.iter().enumerate() {
         let val = cg.compile_expr(elem)?;
+        let val_i64 = val_to_i64(cg, val);
         let gep = unsafe { cg.builder.build_gep(i64_ty, ptr, &[cg.context.i32_type().const_int(i as u64, false)], "idx").unwrap() };
-        cg.builder.build_store(gep, val).unwrap();
+        cg.builder.build_store(gep, val_i64).unwrap();
     }
     Ok(ptr.into())
+}
+
+pub fn val_to_i64<'ctx>(cg: &mut CodeGen<'ctx>, val: BasicValueEnum<'ctx>) -> BasicValueEnum<'ctx> {
+    let i64_ty = cg.context.i64_type();
+    match val {
+        BasicValueEnum::FloatValue(f) => cg.builder.build_bit_cast(f, i64_ty, "f2i").unwrap(),
+        BasicValueEnum::PointerValue(p) => cg.builder.build_ptr_to_int(p, i64_ty, "p2i").unwrap().into(),
+        v => v,
+    }
+}
+
+fn i64_to_val<'ctx>(cg: &mut CodeGen<'ctx>, raw: BasicValueEnum<'ctx>, elem_tag: u64) -> BasicValueEnum<'ctx> {
+    let f64_ty = cg.context.f64_type();
+    let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
+    match elem_tag {
+        1 => cg.builder.build_bit_cast(raw.into_int_value(), f64_ty, "i2f").unwrap().into(),
+        2 => cg.builder.build_int_to_ptr(raw.into_int_value(), ptr_ty, "i2p").unwrap().into(),
+        _ => raw,
+    }
 }
 
 fn compile_index<'ctx>(cg: &mut CodeGen<'ctx>, obj: &Expr, index: &Expr) -> Result<BasicValueEnum<'ctx>, AzError> {
@@ -199,35 +220,56 @@ fn compile_index<'ctx>(cg: &mut CodeGen<'ctx>, obj: &Expr, index: &Expr) -> Resu
     let ptr = obj_val.into_pointer_value();
     let idx_int = idx_val.into_int_value();
     let elem = unsafe { cg.builder.build_gep(cg.context.i64_type(), ptr, &[idx_int], "elem").unwrap() };
-    Ok(cg.builder.build_load(cg.context.i64_type(), elem, "loaded").unwrap())
+    let raw = cg.builder.build_load(cg.context.i64_type(), elem, "loaded").unwrap();
+    let elem_tag = elem_tag_for_expr(cg, obj);
+    Ok(i64_to_val(cg, raw, elem_tag))
+}
+
+fn elem_tag_for_expr<'ctx>(cg: &CodeGen<'ctx>, obj: &Expr) -> u64 {
+    match obj {
+        Expr::Ident(ident) => cg.array_elem_types.get(&ident.name).copied().unwrap_or(0),
+        Expr::Array(elems) => {
+            if let Some(first) = elems.first() {
+                match first {
+                    Expr::Int(_) => 0,
+                    Expr::Float(_) => 1,
+                    Expr::String(_) | Expr::Char(_) => 2,
+                    Expr::Bool(_) => 3,
+                    _ => 0,
+                }
+            } else { 0 }
+        }
+        _ => 0,
+    }
 }
 
 fn compile_slice<'ctx>(cg: &mut CodeGen<'ctx>, obj: &Expr, start: &Expr, end: &Expr, end_is_len: bool) -> Result<BasicValueEnum<'ctx>, AzError> {
+    let is_array = matches!(obj, Expr::Ident(ident) if cg.array_elem_types.contains_key(&ident.name));
     let obj_val = cg.compile_expr(obj)?;
     let ptr = obj_val.into_pointer_value();
     let i64_ty = cg.context.i64_type();
-    let i8_ty = cg.context.i8_type();
+    let elem_ty: BasicTypeEnum = if is_array { i64_ty.into() } else { cg.context.i8_type().into() };
     let i64_zero = i64_ty.const_zero();
 
-    // Get the total length (strlen for strings)
-    if cg.module.get_function("strlen").is_none() {
-        let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
-        let ft = i64_ty.fn_type(&[ptr_ty.into()], false);
-        cg.module.add_function("strlen", ft, None);
-    }
-    let total_len = cg.builder.build_call(
-        cg.module.get_function("strlen").unwrap(), &[ptr.into()], "tlen"
-    ).unwrap().try_as_basic_value().unwrap_basic().into_int_value();
-
-    // Compile start and end expressions
-    let raw_start = cg.compile_expr(start)?.into_int_value();
-    let raw_end = if end_is_len {
-        total_len // "to end" → uses the full string length
+    let total_len = if is_array {
+        if let Expr::Ident(ident) = obj {
+            let len_ptr = cg.array_lengths.get(&ident.name).copied().unwrap();
+            cg.builder.build_load(i64_ty, len_ptr, "alen").unwrap().into_int_value()
+        } else { i64_zero }
     } else {
-        cg.compile_expr(end)?.into_int_value()
+        if cg.module.get_function("strlen").is_none() {
+            let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
+            let ft = i64_ty.fn_type(&[ptr_ty.into()], false);
+            cg.module.add_function("strlen", ft, None);
+        }
+        cg.builder.build_call(
+            cg.module.get_function("strlen").unwrap(), &[ptr.into()], "tlen"
+        ).unwrap().try_as_basic_value().unwrap_basic().into_int_value()
     };
 
-    // Adjust negative indices: if raw < 0, add total_len
+    let raw_start = cg.compile_expr(start)?.into_int_value();
+    let raw_end = if end_is_len { total_len } else { cg.compile_expr(end)?.into_int_value() };
+
     let sn = cg.builder.build_int_compare(inkwell::IntPredicate::SLT, raw_start, i64_zero, "sn").unwrap();
     let sa = cg.builder.build_int_add(total_len, raw_start, "sa").unwrap();
     let adj_start = cg.builder.build_select(sn, sa, raw_start, "as").unwrap();
@@ -236,7 +278,6 @@ fn compile_slice<'ctx>(cg: &mut CodeGen<'ctx>, obj: &Expr, start: &Expr, end: &E
     let ea = cg.builder.build_int_add(total_len, raw_end, "ea").unwrap();
     let adj_end = cg.builder.build_select(en, ea, raw_end, "ae").unwrap();
 
-    // Clamp to valid range
     let as_i = adj_start.into_int_value();
     let ae_i = adj_end.into_int_value();
     let lt_s = cg.builder.build_int_compare(inkwell::IntPredicate::SLT, as_i, i64_zero, "lts").unwrap();
@@ -248,17 +289,13 @@ fn compile_slice<'ctx>(cg: &mut CodeGen<'ctx>, obj: &Expr, start: &Expr, end: &E
     let gt_e = cg.builder.build_int_compare(inkwell::IntPredicate::SGT, ce, total_len, "gte").unwrap();
     let clamped_end = cg.builder.build_select(gt_e, total_len, ce, "ce2").unwrap().into_int_value();
 
-    // Compute slice length
     let len = cg.builder.build_int_sub(clamped_end, clamped_start, "slen").unwrap();
-    // Ensure positive
     let len_pos = cg.builder.build_select(
         cg.builder.build_int_compare(inkwell::IntPredicate::SLT, len, i64_zero, "lz").unwrap(),
         i64_zero, len, "lp"
     ).unwrap().into_int_value();
 
-    // Allocate result buffer (i8 for strings)
-    let buf = cg.builder.build_array_malloc(i8_ty, len_pos, "slice").unwrap();
-    // Handle zero-length slice
+    let buf = cg.builder.build_array_malloc(elem_ty, len_pos, "slice").unwrap();
     let zero_len = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, len_pos, i64_zero, "zl").unwrap();
     let cf = cg.function.unwrap();
     let copy_bb = cg.context.append_basic_block(cf, "sc_copy");
@@ -266,27 +303,23 @@ fn compile_slice<'ctx>(cg: &mut CodeGen<'ctx>, obj: &Expr, start: &Expr, end: &E
     let merge_bb = cg.context.append_basic_block(cf, "sc_end");
     cg.builder.build_conditional_branch(zero_len, skip_bb, copy_bb).unwrap();
 
-    // Copy loop
     cg.builder.position_at_end(copy_bb);
     let i_ptr = cg.create_entry_alloca(i64_ty.into(), "__si");
     cg.builder.build_store(i_ptr, i64_zero).unwrap();
-
     let cond_bb = cg.context.append_basic_block(cf, "sl_cond");
     let body_bb = cg.context.append_basic_block(cf, "sl_body");
     let done_bb = cg.context.append_basic_block(cf, "sl_done");
     cg.builder.build_unconditional_branch(cond_bb).unwrap();
-
     cg.builder.position_at_end(cond_bb);
     let ci = cg.builder.build_load(i64_ty, i_ptr, "ci").unwrap().into_int_value();
     let cc = cg.builder.build_int_compare(inkwell::IntPredicate::SLT, ci, len_pos, "cc").unwrap();
     cg.builder.build_conditional_branch(cc, body_bb, done_bb).unwrap();
-
     cg.builder.position_at_end(body_bb);
     let ci2 = cg.builder.build_load(i64_ty, i_ptr, "ci2").unwrap().into_int_value();
     let src_idx = cg.builder.build_int_add(ci2, clamped_start, "si").unwrap();
-    let src_g = unsafe { cg.builder.build_gep(i8_ty, ptr, &[src_idx], "sg").unwrap() };
-    let sv = cg.builder.build_load(i8_ty, src_g, "sv").unwrap();
-    let dst_g = unsafe { cg.builder.build_gep(i8_ty, buf, &[ci2], "dg").unwrap() };
+    let src_g = unsafe { cg.builder.build_gep(elem_ty, ptr, &[src_idx], "sg").unwrap() };
+    let sv = cg.builder.build_load(elem_ty, src_g, "sv").unwrap();
+    let dst_g = unsafe { cg.builder.build_gep(elem_ty, buf, &[ci2], "dg").unwrap() };
     cg.builder.build_store(dst_g, sv).unwrap();
     let ni = cg.builder.build_int_add(ci2, i64_ty.const_int(1, false), "ni").unwrap();
     cg.builder.build_store(i_ptr, ni).unwrap();
@@ -297,9 +330,11 @@ fn compile_slice<'ctx>(cg: &mut CodeGen<'ctx>, obj: &Expr, start: &Expr, end: &E
     cg.builder.position_at_end(skip_bb);
     cg.builder.build_unconditional_branch(merge_bb).unwrap();
     cg.builder.position_at_end(merge_bb);
-    // Null-terminate
-    let ng = unsafe { cg.builder.build_gep(i8_ty, buf, &[len_pos], "ng").unwrap() };
-    cg.builder.build_store(ng, i8_ty.const_zero()).unwrap();
+    // Null-terminate only for strings
+    if !is_array {
+        let ng = unsafe { cg.builder.build_gep(cg.context.i8_type(), buf, &[len_pos], "ng").unwrap() };
+        cg.builder.build_store(ng, cg.context.i8_type().const_zero()).unwrap();
+    }
 
     Ok(buf.into())
 }

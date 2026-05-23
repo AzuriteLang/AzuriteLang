@@ -43,6 +43,9 @@ pub struct CodeGen<'ctx> {
     pub caught_flag: Option<PointerValue<'ctx>>,
     pub try_end_bb: Option<BasicBlock<'ctx>>,
     pub any_tags: HashMap<String, PointerValue<'ctx>>,
+    pub array_lengths: HashMap<String, PointerValue<'ctx>>,
+    pub array_elem_types: HashMap<String, u64>,
+    pub realloc_fn: Option<FunctionValue<'ctx>>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -69,6 +72,9 @@ impl<'ctx> CodeGen<'ctx> {
             caught_flag: None,
             try_end_bb: None,
             any_tags: HashMap::new(),
+            array_lengths: HashMap::new(),
+            array_elem_types: HashMap::new(),
+            realloc_fn: None,
         }
     }
 
@@ -113,13 +119,29 @@ impl<'ctx> CodeGen<'ctx> {
                     self.builder.build_store(alloca, val).unwrap();
                     self.variables.insert(name.name.clone(), (alloca, val_type));
                 }
-                // Store array length for literals
+                // Store array length, capacity, and element type tag for literals
                 if let Expr::Array(elems) = value.as_ref() {
+                    let elem_tag = if let Some(first) = elems.first() {
+                        match first {
+                            Expr::Int(_) => 0u64,
+                            Expr::Float(_) => 1,
+                            Expr::String(_) | Expr::Char(_) => 2,
+                            Expr::Bool(_) => 3,
+                            _ => 0,
+                        }
+                    } else { 0 };
+                    let len_val = elems.len() as u64;
                     let len_name = format!("{}.__len", name.name);
+                    let cap_name = format!("{}.__cap", name.name);
                     let len_alloca = self.create_entry_alloca(self.context.i64_type().into(), &len_name);
-                    let len_val = self.context.i64_type().const_int(elems.len() as u64, false);
-                    self.builder.build_store(len_alloca, len_val).unwrap();
+                    let cap_alloca = self.create_entry_alloca(self.context.i64_type().into(), &cap_name);
+                    self.builder.build_store(len_alloca, self.context.i64_type().const_int(len_val, false)).unwrap();
+                    self.builder.build_store(cap_alloca, self.context.i64_type().const_int(len_val, false)).unwrap();
                     self.variables.insert(len_name, (len_alloca, self.context.i64_type().into()));
+                    self.variables.insert(cap_name.clone(), (cap_alloca, self.context.i64_type().into()));
+                    self.array_lengths.insert(name.name.clone(), len_alloca);
+                    self.array_lengths.insert(cap_name, cap_alloca);
+                    self.array_elem_types.insert(name.name.clone(), elem_tag);
                 }
                 Ok(Some(val))
             }
@@ -214,6 +236,44 @@ impl<'ctx> CodeGen<'ctx> {
             Stmt::For { name, iterable, body } => {
                 let cf = self.function.unwrap();
                 let i64_ty = self.context.i64_type();
+
+                // Array iteration: for x in arr { ... }
+                if let Some((arr_ptr, elem_tag, arr_len)) = self.resolve_array_iterable(iterable) {
+                    let len = arr_len;
+                    let i_ptr = self.create_entry_alloca(i64_ty.into(), &name.name);
+                    let i_zero = i64_ty.const_zero();
+                    self.builder.build_store(i_ptr, i_zero).unwrap();
+                    let cond_bb = self.context.append_basic_block(cf, "for_cond");
+                    let body_bb = self.context.append_basic_block(cf, "for_body");
+                    let inc_bb = self.context.append_basic_block(cf, "for_inc");
+                    let after_bb = self.context.append_basic_block(cf, "for_after");
+                    self.builder.build_unconditional_branch(cond_bb).unwrap();
+                    self.builder.position_at_end(cond_bb);
+                    let i_val = self.builder.build_load(i64_ty, i_ptr, "i").unwrap().into_int_value();
+                    let cmp = self.builder.build_int_compare(inkwell::IntPredicate::SLT, i_val, len, "fcmp").unwrap();
+                    self.builder.build_conditional_branch(cmp, body_bb, after_bb).unwrap();
+                    self.builder.position_at_end(body_bb);
+                    let elem_gep = unsafe { self.builder.build_gep(i64_ty, arr_ptr, &[i_val], "felem").unwrap() };
+                    let elem = self.builder.build_load(i64_ty, elem_gep, "fe").unwrap();
+                    let elem_val: BasicValueEnum = match elem_tag {
+                        1 => self.builder.build_bit_cast(elem.into_int_value(), self.context.f64_type(), "i2f").unwrap().into(),
+                        2 => self.builder.build_int_to_ptr(elem.into_int_value(), self.context.ptr_type(inkwell::AddressSpace::default()), "i2p").unwrap().into(),
+                        _ => elem,
+                    };
+                    let loop_var_ptr = self.create_entry_alloca(elem_val.get_type(), &name.name);
+                    self.builder.build_store(loop_var_ptr, elem_val).unwrap();
+                    self.variables.insert(name.name.clone(), (loop_var_ptr, elem_val.get_type()));
+                    self.loop_stack.push((inc_bb, after_bb));
+                    self.compile_block_stmts(body, false)?;
+                    self.loop_stack.pop();
+                    if !self.has_terminator() { self.builder.build_unconditional_branch(inc_bb).unwrap(); }
+                    self.builder.position_at_end(inc_bb);
+                    let i_next = self.builder.build_int_add(i_val, i64_ty.const_int(1, false), "inc").unwrap();
+                    self.builder.build_store(i_ptr, i_next).unwrap();
+                    self.builder.build_unconditional_branch(cond_bb).unwrap();
+                    self.builder.position_at_end(after_bb);
+                    return Ok(None);
+                }
 
                 match iterable.as_ref() {
                     Expr::Range { start, end } => {
@@ -546,5 +606,37 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub fn field_type_to_llvm(&self, type_: &azurite_parser::ast::Type) -> BasicTypeEnum<'ctx> {
         self.type_to_llvm(type_)
+    }
+
+    fn resolve_array_iterable(&mut self, iterable: &Expr) -> Option<(PointerValue<'ctx>, u64, IntValue<'ctx>)> {
+        let i64_ty = self.context.i64_type();
+        match iterable {
+            Expr::Ident(ident) => {
+                let var_name = &ident.name;
+                if !self.array_elem_types.contains_key(var_name) { return None; }
+                let len_ptr = self.array_lengths.get(var_name)?;
+                let len = self.builder.build_load(i64_ty, *len_ptr, "alen").ok()?.into_int_value();
+                let arr_alloca = self.variables.get(var_name)?.0;
+                let arr_ptr = self.builder.build_load(self.context.ptr_type(inkwell::AddressSpace::default()), arr_alloca, "arr_ld").ok()?.into_pointer_value();
+                let elem_tag = self.array_elem_types.get(var_name).copied().unwrap_or(0);
+                Some((arr_ptr, elem_tag, len))
+            }
+            Expr::Array(elems) => {
+                let count = elems.len() as u64;
+                let heap_ptr = if count > 0 {
+                    // Compile the array expression to get a heap pointer
+                    let val = self.compile_expr(iterable).ok()?;
+                    val.into_pointer_value()
+                } else { return None; };
+                let elem_tag = match elems.first() {
+                    Some(Expr::Float(_)) => 1,
+                    Some(Expr::String(_)) | Some(Expr::Char(_)) => 2,
+                    Some(Expr::Bool(_)) => 3,
+                    _ => 0,
+                };
+                Some((heap_ptr, elem_tag, i64_ty.const_int(count, false)))
+            }
+            _ => None,
+        }
     }
 }

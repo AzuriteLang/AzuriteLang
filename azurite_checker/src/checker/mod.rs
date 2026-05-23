@@ -39,7 +39,7 @@ impl Checker {
     fn register_builtins(&mut self) {
         let builtins = [
             ("print", Type::Func { params: vec![], ret: Box::new(Type::Void) }), // varargs (handled by codegen)
-            ("len", Type::Func { params: vec![Type::String], ret: Box::new(Type::Int) }),
+            ("len", Type::Func { params: vec![], ret: Box::new(Type::Int) }),
             ("int", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Int) }),
             ("float", Type::Func { params: vec![Type::Int], ret: Box::new(Type::Float) }),
             ("sqrt", Type::Func { params: vec![Type::Float], ret: Box::new(Type::Float) }),

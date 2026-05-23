@@ -53,7 +53,7 @@ func main() {
 # Build the compiler
 cargo build --release
 
-# Run tests (270+)
+# Run tests (380+)
 cargo test
 ```
 
@@ -287,6 +287,47 @@ match x {
 let arr = [10, 20, 30]
 print(arr[0])
 arr[1] = 99
+```
+
+**Multi-type**: arrays support `int`, `float`, `string`, `bool`:
+```az
+let floats = [3.14, 2.71]
+let strs = ["hello", "world"]
+```
+
+**Methods** (mutate in-place):
+| Method | Description |
+|---|---|
+| `arr.len()` | Length |
+| `arr.is_empty()` | `true` / `false` |
+| `arr.contains(val)` | Search (linear) |
+| `arr.clear()` | Remove all elements |
+| `arr.push(val)` | Append (auto-realloc) |
+| `arr.pop()` | Remove & return last element |
+| `arr.insert(i, val)` | Insert at index (grows) |
+| `arr.remove(i)` | Remove at index (shrinks) |
+| `arr.reverse()` | Reverse in place |
+| `arr.sort()` | Bubble sort (int/float) |
+
+**Iterators** (return new arrays):
+```az
+func double(x: int) -> int { return x * 2 }
+func is_pos(x: int) -> bool { return x > 0 }
+func add(a: int, b: int) -> int { return a + b }
+
+let m = arr.map(double)       // [2, 4, 6, ...]
+let f = arr.filter(is_pos)    // keeps positive
+let s = arr.reduce(0, add)    // sum
+```
+
+**For-in loop**:
+```az
+for x in arr {
+    print(x)
+}
+for x in [1, 2, 3] {
+    print(x)
+}
 ```
 
 ### Built-in Functions

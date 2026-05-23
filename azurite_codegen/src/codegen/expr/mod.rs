@@ -6,7 +6,11 @@ use crate::codegen::CodeGen;
 mod literal;
 mod operator;
 mod call;
-mod control;
+pub(crate) mod control;
+pub(crate) mod array;
+pub(crate) mod math;
+pub(crate) mod io;
+pub(crate) mod stri;
 
 pub fn compile_expr<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicValueEnum<'ctx>, AzError> {
     match expr {

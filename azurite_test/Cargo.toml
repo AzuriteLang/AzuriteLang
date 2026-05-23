@@ -13,3 +13,8 @@ azurite_parser = { path = "../azurite_parser" }
 azurite_checker = { path = "../azurite_checker" }
 azurite_errors = { path = "../azurite_errors" }
 azurite_resolver = { path = "../azurite_resolver" }
+azurite_codegen = { path = "../azurite_codegen" }
+inkwell = { version = "0.9", optional = true, default-features = false, features = ["llvm22-1", "target-x86", "target-arm", "target-aarch64"] }
+
+[features]
+llvm = ["azurite_codegen/llvm", "dep:inkwell"]

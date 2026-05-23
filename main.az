@@ -1,0 +1,31 @@
+func double(x: int) -> int {
+    return x * 2
+}
+
+func is_positive(x: int) -> bool {
+    return x > 0
+}
+
+func add(a: int, b: int) -> int {
+    return a + b
+}
+
+func main() {
+    let arr = [1, 2, 3, 4, 5]
+
+    print("map double:")
+    let doubled = arr.map(double)
+    for x in doubled {
+        print(x)
+    }
+
+    print("filter positive:")
+    let filtered = arr.filter(is_positive)
+    for x in filtered {
+        print(x)
+    }
+
+    print("reduce sum:")
+    let sum = arr.reduce(0, add)
+    print(sum)
+}

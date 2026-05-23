@@ -302,3 +302,25 @@ fn test_index_still_works() {
 fn test_ternary_and_slice() {
     assert!(check("func main() { let arr = [1, 2, 3, 4, 5] let x = 1 let s = x == 1 ? arr[0:2] : arr[2:4] }").is_ok());
 }
+
+// ===== Array method calls (arr.push, arr.pop, arr.len) =====
+
+#[test]
+fn test_arr_len_method() {
+    assert!(check("func main() { let arr = [1, 2, 3] let n = arr.len() }").is_ok());
+}
+
+#[test]
+fn test_arr_push_method() {
+    assert!(check("func main() { let arr = [1, 2, 3] arr.push(4) }").is_ok());
+}
+
+#[test]
+fn test_arr_pop_method() {
+    assert!(check("func main() { let arr = [1, 2, 3] let x = arr.pop() }").is_ok());
+}
+
+#[test]
+fn test_arr_method_chain() {
+    assert!(check("func main() { let arr = [1, 2] arr.push(3) let x = arr.pop() let n = arr.len() print(n) print(x) }").is_ok());
+}

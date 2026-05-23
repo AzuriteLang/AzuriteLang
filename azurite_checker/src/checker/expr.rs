@@ -58,6 +58,161 @@ fn resolve_instance_method(c: &mut Checker, instance: &Type, method: &str, args:
                 }
             }
         }
+        Type::Array(elem) => {
+            match method {
+                "len" | "is_empty" | "clear" | "reverse" | "sort" => {
+                    for a in args { check_expr(c, a); }
+                    let ret = match method {
+                        "len" => Type::Int,
+                        "is_empty" => Type::Bool,
+                        "clear" | "reverse" | "sort" => Type::Void,
+                        _ => unreachable!(),
+                    };
+                    Some(ret)
+                }
+                "map" => {
+                    if args.len() != 1 {
+                        c.error(span, format!("'map' takes 1 arg (function), got {}", args.len()));
+                        None
+                    } else if let Expr::Ident(fn_ident) = &args[0] {
+                        let fn_name = &fn_ident.name;
+                        match c.scope.lookup(fn_name).map(|s| s.type_.clone()) {
+                            Some(Type::Func { params, ret }) => {
+                                if params.len() != 1 {
+                                    c.error(span, format!("'map' function must take 1 arg, got {}", params.len()));
+                                    return None;
+                                }
+                                if params[0] != **elem {
+                                    c.error(span, format!("'map' function takes '{}', expected '{}'", params[0], elem));
+                                    return None;
+                                }
+                                Some(Type::Array(Box::new(*ret.clone())))
+                            }
+                            _ => { c.error(span, format!("'{}' is not a function", fn_name)); None }
+                        }
+                    } else {
+                        c.error(span, "'map' requires a function name".to_string());
+                        None
+                    }
+                }
+                "filter" => {
+                    if args.len() != 1 {
+                        c.error(span, format!("'filter' takes 1 arg (function), got {}", args.len()));
+                        None
+                    } else if let Expr::Ident(fn_ident) = &args[0] {
+                        let fn_name = &fn_ident.name;
+                        match c.scope.lookup(fn_name).map(|s| s.type_.clone()) {
+                            Some(Type::Func { params, ret }) => {
+                                if params.len() != 1 {
+                                    c.error(span, format!("'filter' function must take 1 arg, got {}", params.len()));
+                                    return None;
+                                }
+                                if params[0] != **elem {
+                                    c.error(span, format!("'filter' function takes '{}', expected '{}'", params[0], elem));
+                                    return None;
+                                }
+                                if *ret != Type::Bool {
+                                    c.error(span, "'filter' function must return bool".to_string());
+                                    return None;
+                                }
+                                Some(Type::Array(Box::new(elem.as_ref().clone())))
+                            }
+                            _ => { c.error(span, format!("'{}' is not a function", fn_name)); None }
+                        }
+                    } else {
+                        c.error(span, "'filter' requires a function name".to_string());
+                        None
+                    }
+                }
+                "reduce" => {
+                    if args.len() != 2 {
+                        c.error(span, format!("'reduce' takes 2 args (initial, function), got {}", args.len()));
+                        None
+                    } else {
+                        let init_type = check_expr(c, &args[0]);
+                        if init_type.as_ref() != Some(elem.as_ref()) {
+                            c.error(span, format!("initial value must be '{}', got '{}'", elem, init_type.unwrap_or(Type::Void)));
+                        }
+                        if let Expr::Ident(fn_ident) = &args[1] {
+                            let fn_name = &fn_ident.name;
+                            match c.scope.lookup(fn_name).map(|s| s.type_.clone()) {
+                                Some(Type::Func { params, ret }) => {
+                                    if params.len() != 2 {
+                                        c.error(span, format!("'reduce' function must take 2 args, got {}", params.len()));
+                                    } else if params[0] != **elem || params[1] != **elem {
+                                        c.error(span, format!("'reduce' function takes '({}, {})', expected '({}, {})'", params[0], params[1], elem, elem));
+                                    } else if *ret != **elem {
+                                        c.error(span, format!("'reduce' function must return '{}', got '{}'", elem, ret));
+                                    }
+                                }
+                                _ => { c.error(span, format!("'{}' is not a function", fn_name)); }
+                            }
+                        } else {
+                            c.error(span, "'reduce' second arg must be a function name".to_string());
+                        }
+                        Some(*elem.clone())
+                    }
+                }
+                "push" => {
+                    if args.len() != 1 {
+                        c.error(span, format!("'push' takes 1 arg, got {}", args.len()));
+                    } else {
+                        let arg_type = check_expr(c, &args[0]);
+                        if arg_type.as_ref() != Some(elem.as_ref()) {
+                            c.error(span, format!("expected '{}', got '{}'", elem, arg_type.unwrap_or(Type::Void)));
+                        }
+                    }
+                    Some(Type::Void)
+                }
+                "contains" => {
+                    if args.len() != 1 {
+                        c.error(span, format!("'contains' takes 1 arg, got {}", args.len()));
+                    } else {
+                        let arg_type = check_expr(c, &args[0]);
+                        if arg_type.as_ref() != Some(elem.as_ref()) {
+                            c.error(span, format!("expected '{}', got '{}'", elem, arg_type.unwrap_or(Type::Void)));
+                        }
+                    }
+                    Some(Type::Bool)
+                }
+                "pop" => {
+                    if !args.is_empty() {
+                        c.error(span, format!("'pop' takes 0 args, got {}", args.len()));
+                    }
+                    Some(*elem.clone())
+                }
+                "insert" => {
+                    if args.len() != 2 {
+                        c.error(span, format!("'insert' takes 2 args, got {}", args.len()));
+                    } else {
+                        let idx_type = check_expr(c, &args[0]);
+                        if idx_type != Some(Type::Int) {
+                            c.error(span, "first arg must be int".to_string());
+                        }
+                        let val_type = check_expr(c, &args[1]);
+                        if val_type.as_ref() != Some(elem.as_ref()) {
+                            c.error(span, format!("expected '{}', got '{}'", elem, val_type.unwrap_or(Type::Void)));
+                        }
+                    }
+                    Some(Type::Void)
+                }
+                "remove" => {
+                    if args.len() != 1 {
+                        c.error(span, format!("'remove' takes 1 arg, got {}", args.len()));
+                    } else {
+                        let idx_type = check_expr(c, &args[0]);
+                        if idx_type != Some(Type::Int) {
+                            c.error(span, "first arg must be int".to_string());
+                        }
+                    }
+                    Some(*elem.clone())
+                }
+                _ => {
+                    c.error(span, format!("no method '{}' on array", method));
+                    None
+                }
+            }
+        }
         _ => {
             c.error(span, "cannot call method on non-instance".to_string());
             None

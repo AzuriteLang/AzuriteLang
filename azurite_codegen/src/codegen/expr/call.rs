@@ -2,8 +2,8 @@ use azurite_errors::{AzError, ErrorKind};
 use azurite_lexer::Span;
 use azurite_parser::ast::*;
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum};
-use inkwell::IntPredicate;
 use crate::codegen::CodeGen;
+use super::{array, math, io, stri};
 
 pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicValueEnum<'ctx>, AzError> {
     match expr {
@@ -14,44 +14,14 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
             };
             match callee_name.as_str() {
                 "print" => return super::super::builtin::compile_print(cg, args),
-                "sqrt" => return compile_sqrt(cg, args),
-                "abs" => return compile_abs(cg, args),
-                "len" => return compile_len(cg, args),
-                "int" => return compile_int_cast(cg, args),
-                "float" => return compile_float_cast(cg, args),
-                "read" => return compile_read(cg),
-                "input" => return compile_input(cg, args),
-                "exit" => return compile_exit(cg, args),
-                "char_at" => return compile_char_at(cg, args),
-                "chr" => return compile_chr(cg, args),
-                "str" => return compile_str(cg, args),
-                "getenv" => return compile_getenv(cg, args),
-                "system" => return compile_system(cg, args),
-                "pid" => return compile_pid(cg, args),
-                "cwd" => return compile_cwd(cg, args),
-                "sin" => return compile_math1(cg, "sin", args),
-                "cos" => return compile_math1(cg, "cos", args),
-                "tan" => return compile_math1(cg, "tan", args),
-                "log" => return compile_math1(cg, "log", args),
-                "log10" => return compile_math1(cg, "log10", args),
-                "floor" => return compile_math1(cg, "floor", args),
-                "ceil" => return compile_math1(cg, "ceil", args),
-                "pow" => return compile_math2(cg, "pow", args),
-                "asin" => return compile_math1(cg, "asin", args),
-                "acos" => return compile_math1(cg, "acos", args),
-                "atan" => return compile_math1(cg, "atan", args),
-                "atan2" => return compile_math2(cg, "atan2", args),
-                "sinh" => return compile_math1(cg, "sinh", args),
-                "cosh" => return compile_math1(cg, "cosh", args),
-                "tanh" => return compile_math1(cg, "tanh", args),
-                "exp" => return compile_math1(cg, "exp", args),
-                "expm1" => return compile_math1(cg, "expm1", args),
-                "log2" => return compile_math1(cg, "log2", args),
-                "hypot" => return compile_math2(cg, "hypot", args),
-                "fmod" => return compile_math2(cg, "fmod", args),
-                "copysign" => return compile_math2(cg, "copysign", args),
-                "rand" => return compile_rand(cg, args),
-                "srand" => return compile_srand(cg, args),
+                "sqrt" => return math::compile_sqrt(cg, args),
+                "abs" => return math::compile_abs(cg, args),
+                "sin" | "cos" | "tan" | "log" | "log10" | "floor" | "ceil" | "asin" | "acos" | "atan" | "sinh" | "cosh" | "tanh" | "exp" | "expm1" | "log2" => return math::compile_math1(cg, &callee_name, args),
+                "pow" | "atan2" | "hypot" | "fmod" | "copysign" => return math::compile_math2(cg, &callee_name, args),
+                "rand" => return math::compile_rand(cg, args),
+                "srand" => return math::compile_srand(cg, args),
+                "len" | "str" | "int" | "float" | "char_at" | "chr" => return stri::dispatch(cg, &callee_name, args),
+                "read" | "input" | "exit" | "getenv" | "system" | "pid" | "cwd" => return io::dispatch(cg, &callee_name, args),
                 _ => {}
             }
             let mut compiled = args.iter().map(|a| cg.compile_expr(a)).collect::<Result<Vec<_>, _>>()?;
@@ -79,6 +49,148 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
             }
         }
         Expr::MethodCall { obj, method, args, null_safe: _ } => {
+            // Array method calls: arr.push(), arr.pop(), arr.len()
+            if let Expr::Ident(ident) = obj.as_ref() {
+                if cg.array_lengths.contains_key(&ident.name) {
+                    let var_name = ident.name.clone();
+                    // Load the actual heap pointer from the variable alloca
+                    let arr_heap_ptr = if let Some((arr_alloca, _)) = cg.variables.get(&var_name) {
+                        cg.builder.build_load(cg.context.ptr_type(inkwell::AddressSpace::default()), *arr_alloca, "arr_ld").unwrap().into_pointer_value()
+                    } else {
+                        return Err(AzError::new(ErrorKind::Semantic, obj.span(), "unknown array"));
+                    };
+                    let elem_tag = cg.array_elem_types.get(&var_name).copied().unwrap_or(0);
+                    match method.as_str() {
+                        "len" => {
+                            let len_ptr = cg.array_lengths[&var_name];
+                            let val = cg.builder.build_load(cg.context.i64_type(), len_ptr, "arr_len").unwrap();
+                            return Ok(val);
+                        }
+                        "is_empty" => {
+                            let len_ptr = cg.array_lengths[&var_name];
+                            let len = cg.builder.build_load(cg.context.i64_type(), len_ptr, "len").unwrap().into_int_value();
+                            let zero = cg.context.i64_type().const_zero();
+                            let is_zero = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, len, zero, "emp").unwrap();
+                            return Ok(cg.builder.build_int_z_extend(is_zero, cg.context.i64_type(), "emp_i64").unwrap().into());
+                        }
+                        "clear" => {
+                            let len_ptr = cg.array_lengths[&var_name];
+                            cg.builder.build_store(len_ptr, cg.context.i64_type().const_zero()).unwrap();
+                            return Ok(cg.context.i64_type().const_zero().into());
+                        }
+                        "reverse" => {
+                            array::compile_array_reverse(cg, &var_name, arr_heap_ptr, elem_tag);
+                            return Ok(cg.context.i64_type().const_zero().into());
+                        }
+                        "sort" => {
+                            array::compile_array_sort(cg, &var_name, arr_heap_ptr, elem_tag);
+                            return Ok(cg.context.i64_type().const_zero().into());
+                        }
+                        "contains" => {
+                            let val = cg.compile_expr(&args[0])?;
+                            let val_i64 = super::control::val_to_i64(cg, val);
+                            let result = array::compile_array_contains(cg, arr_heap_ptr, &var_name, val_i64, elem_tag);
+                            return Ok(result);
+                        }
+                        "push" => {
+                            let len_ptr = cg.array_lengths[&var_name];
+                            let val = cg.compile_expr(&args[0])?;
+                            let val_i64 = super::control::val_to_i64(cg, val);
+                            let i64_ty = cg.context.i64_type();
+                            let old_len = cg.builder.build_load(i64_ty, len_ptr, "ol").unwrap().into_int_value();
+                            let new_len = cg.builder.build_int_add(old_len, i64_ty.const_int(1, false), "nl").unwrap();
+                            cg.builder.build_store(len_ptr, new_len).unwrap();
+                            let cap_ptr = cg.array_lengths[&format!("{}.__cap", var_name)];
+                            let old_cap = cg.builder.build_load(i64_ty, cap_ptr, "oc").unwrap().into_int_value();
+                            let full = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, old_len, old_cap, "full").unwrap();
+                            let cf = cg.function.unwrap();
+                            let grow_bb = cg.context.append_basic_block(cf, "grow");
+                            let skip_bb = cg.context.append_basic_block(cf, "nogrow");
+                            let merge_bb = cg.context.append_basic_block(cf, "push_end");
+                            cg.builder.build_conditional_branch(full, grow_bb, skip_bb).unwrap();
+                            cg.builder.position_at_end(grow_bb);
+                            let zero_cap = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, old_cap, i64_ty.const_zero(), "zc").unwrap();
+                            let base_cap = i64_ty.const_int(4, false);
+                            let doubled = cg.builder.build_int_mul(old_cap, i64_ty.const_int(2, false), "dbl").unwrap();
+                            let new_cap = cg.builder.build_select(zero_cap, base_cap, doubled, "nc").unwrap().into_int_value();
+                            let new_sz = cg.builder.build_int_mul(new_cap, i64_ty.const_int(8, false), "nsz").unwrap();
+                            if cg.module.get_function("realloc").is_none() {
+                                let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
+                                let rt = ptr_ty.fn_type(&[ptr_ty.into(), i64_ty.into()], false);
+                                cg.module.add_function("realloc", rt, None);
+                            }
+                            let realloc_args = &[arr_heap_ptr.into(), new_sz.into()];
+                            let new_ptr_call = cg.builder.build_call(cg.module.get_function("realloc").unwrap(), realloc_args, "rp").unwrap();
+                            let new_ptr_pv = new_ptr_call.try_as_basic_value().unwrap_basic().into_pointer_value();
+                            cg.builder.build_store(cap_ptr, new_cap).unwrap();
+                            if let Some((arr_alloca, _)) = cg.variables.get(&var_name) {
+                                cg.builder.build_store(*arr_alloca, new_ptr_pv).unwrap();
+                            }
+                            cg.builder.build_unconditional_branch(merge_bb).unwrap();
+                            cg.builder.position_at_end(skip_bb);
+                            cg.builder.build_unconditional_branch(merge_bb).unwrap();
+                            cg.builder.position_at_end(merge_bb);
+                            let arr_final = if let Some((arr_alloca, _)) = cg.variables.get(&var_name) {
+                                cg.builder.build_load(cg.context.ptr_type(inkwell::AddressSpace::default()), *arr_alloca, "arr_f").unwrap().into_pointer_value()
+                            } else { arr_heap_ptr };
+                            let gep = unsafe { cg.builder.build_gep(i64_ty, arr_final, &[old_len], "push_gep").unwrap() };
+                            cg.builder.build_store(gep, val_i64).unwrap();
+                            return Ok(i64_ty.const_zero().into());
+                        }
+                        "pop" => {
+                            let len_ptr = cg.array_lengths[&var_name];
+                            let i64_ty = cg.context.i64_type();
+                            let old_len = cg.builder.build_load(i64_ty, len_ptr, "ol").unwrap().into_int_value();
+                            let new_len = cg.builder.build_int_sub(old_len, i64_ty.const_int(1, false), "nl").unwrap();
+                            let is_empty = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, old_len, i64_ty.const_zero(), "emp").unwrap();
+                            let cf = cg.function.unwrap();
+                            let not_empty_bb = cg.context.append_basic_block(cf, "pne");
+                            let empty_bb = cg.context.append_basic_block(cf, "pemp");
+                            let mg = cg.context.append_basic_block(cf, "pmg");
+                            let res_alloca = cg.create_entry_alloca(i64_ty.into(), "pop_res");
+                            cg.builder.build_conditional_branch(is_empty, empty_bb, not_empty_bb).unwrap();
+                            cg.builder.position_at_end(not_empty_bb);
+                            cg.builder.build_store(len_ptr, new_len).unwrap();
+                            let last_idx = cg.builder.build_int_sub(old_len, i64_ty.const_int(1, false), "li").unwrap();
+                            let gep = unsafe { cg.builder.build_gep(i64_ty, arr_heap_ptr, &[last_idx], "pop_gep").unwrap() };
+                            let raw = cg.builder.build_load(i64_ty, gep, "pop_v").unwrap();
+                            cg.builder.build_store(res_alloca, raw).unwrap();
+                            cg.builder.build_unconditional_branch(mg).unwrap();
+                            cg.builder.position_at_end(empty_bb);
+                            cg.builder.build_store(res_alloca, i64_ty.const_zero()).unwrap();
+                            cg.builder.build_unconditional_branch(mg).unwrap();
+                            cg.builder.position_at_end(mg);
+                            let result = cg.builder.build_load(i64_ty, res_alloca, "pop_r").unwrap();
+                            return Ok(result);
+                        }
+                        "insert" => {
+                            let i64_ty = cg.context.i64_type();
+                            array::compile_array_insert(cg, &var_name, arr_heap_ptr, elem_tag, &args[0], &args[1])?;
+                            return Ok(i64_ty.const_zero().into());
+                        }
+                        "remove" => {
+                            let result = array::compile_array_remove(cg, &var_name, arr_heap_ptr, elem_tag, &args[0])?;
+                            return Ok(result);
+                        }
+                        "map" => {
+                            let fn_name = if let Expr::Ident(i) = &args[0] { i.name.clone() } else { return Err(AzError::new(ErrorKind::Semantic, args[0].span(), "expected function name")); };
+                            let result = array::compile_array_map(cg, &var_name, arr_heap_ptr, elem_tag, &fn_name)?;
+                            return Ok(result);
+                        }
+                        "filter" => {
+                            let fn_name = if let Expr::Ident(i) = &args[0] { i.name.clone() } else { return Err(AzError::new(ErrorKind::Semantic, args[0].span(), "expected function name")); };
+                            let result = array::compile_array_filter(cg, &var_name, arr_heap_ptr, elem_tag, &fn_name)?;
+                            return Ok(result);
+                        }
+                        "reduce" => {
+                            let fn_name = if let Expr::Ident(i) = &args[1] { i.name.clone() } else { return Err(AzError::new(ErrorKind::Semantic, args[1].span(), "expected function name")); };
+                            let result = array::compile_array_reduce(cg, &var_name, arr_heap_ptr, elem_tag, &args[0], &fn_name)?;
+                            return Ok(result);
+                        }
+                        _ => {}
+                    }
+                }
+            }
             // Constructor call: ClassName.new(...)
             if method == "new" {
                 if let Expr::Ident(ident) = obj.as_ref() {
@@ -294,406 +406,6 @@ fn is_descendant(struct_types: &std::collections::HashMap<String, crate::codegen
         }
         None => false,
     }
-}
-
-// --- Built-in implementations ---
-
-fn compile_sqrt<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let val = cg.compile_expr(&args[0])?;
-    let f = val.into_float_value();
-    let f64_ty = cg.context.f64_type();
-    let ft = f64_ty.fn_type(&[f64_ty.into()], false);
-    let intrinsic = cg.module.add_function("llvm.sqrt.f64", ft, None);
-    let result = cg.builder.build_call(intrinsic, &[f.into()], "sqrt").unwrap();
-    Ok(match result.try_as_basic_value() { inkwell::values::ValueKind::Basic(bv) => bv, _ => cg.context.f64_type().const_float(0.0).into() })
-}
-
-fn compile_abs<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let val = cg.compile_expr(&args[0])?;
-    let i = val.into_int_value();
-    let zero = cg.context.i64_type().const_zero();
-    let neg = cg.builder.build_int_neg(i, "neg").unwrap();
-    let cmp = cg.builder.build_int_compare(IntPredicate::SLT, i, zero, "cmp").unwrap();
-    Ok(cg.builder.build_select(cmp, neg, i, "abs").unwrap())
-}
-
-fn compile_len<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let val = cg.compile_expr(&args[0])?;
-    let ptr = val.into_pointer_value();
-    if cg.module.get_function("strlen").is_none() {
-        let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
-        let strlen_ty = cg.context.i64_type().fn_type(&[ptr_ty.into()], false);
-        cg.module.add_function("strlen", strlen_ty, None);
-    }
-    let len = cg.builder.build_call(cg.module.get_function("strlen").unwrap(), &[ptr.into()], "len").unwrap();
-    Ok(match len.try_as_basic_value() { inkwell::values::ValueKind::Basic(bv) => bv, _ => cg.context.i64_type().const_zero().into() })
-}
-
-fn compile_read<'ctx>(cg: &mut CodeGen<'ctx>) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let i64_ty = cg.context.i64_type();
-    let i8_ty = cg.context.i8_type();
-
-    // 1024-byte buffer on the stack
-    let buf = cg.builder.build_array_alloca(i8_ty, i64_ty.const_int(1024, false), "input_buf").unwrap();
-
-    // Declare getchar
-    if cg.module.get_function("getchar").is_none() {
-        let getchar_ty = cg.context.i32_type().fn_type(&[], false);
-        cg.module.add_function("getchar", getchar_ty, None);
-    }
-
-    // Read characters one by one using getchar() in a loop
-    // We need a loop: for i = 0..1023 { c = getchar(); if c == '\n' || c == EOF break; buf[i] = c; }
-    let cf = cg.function.unwrap();
-
-    // Allocate loop variable i
-    let i_ptr = cg.create_entry_alloca(i64_ty.into(), "read_i");
-
-    // Store 0 to i
-    cg.builder.build_store(i_ptr, i64_ty.const_zero()).unwrap();
-
-    // Loop header
-    let loop_cond = cg.context.append_basic_block(cf, "read_cond");
-    let loop_body = cg.context.append_basic_block(cf, "read_body");
-    let loop_end = cg.context.append_basic_block(cf, "read_end");
-    cg.builder.build_unconditional_branch(loop_cond).unwrap();
-    cg.builder.position_at_end(loop_cond);
-
-    let i_val = cg.builder.build_load(i64_ty, i_ptr, "i").unwrap().into_int_value();
-    let cmp = cg.builder.build_int_compare(inkwell::IntPredicate::SLT, i_val, i64_ty.const_int(1023, false), "read_cmp").unwrap();
-    cg.builder.build_conditional_branch(cmp, loop_body, loop_end).unwrap();
-    cg.builder.position_at_end(loop_body);
-    cg.loop_stack.push((loop_cond, loop_end));
-
-    // c = getchar()
-    let c_raw = cg.builder.build_call(
-        cg.module.get_function("getchar").unwrap(),
-        &[], "read_char"
-    ).unwrap().try_as_basic_value().unwrap_basic().into_int_value();
-
-    // Extend i32 to i64 for comparison
-    let c_val = cg.builder.build_int_z_extend(c_raw, i64_ty, "c_ext").unwrap();
-
-    // Check for newline (10) or EOF (-1)
-    let is_nl = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, c_val, i64_ty.const_int(10, false), "is_nl").unwrap();
-    let is_eof = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, c_val, i64_ty.const_int(0xFFFFFFFF, false), "is_eof").unwrap();
-    let should_stop = cg.builder.build_or(is_nl, is_eof, "stop").unwrap();
-    let should_stop_bool = cg.builder.build_int_compare(inkwell::IntPredicate::NE, should_stop, cg.context.bool_type().const_zero(), "stop_chk").unwrap();
-    let after_store = cg.context.append_basic_block(cf, "read_store");
-    cg.builder.build_conditional_branch(should_stop_bool, loop_end, after_store).unwrap();
-    cg.builder.position_at_end(after_store);
-
-    // buf[i] = (i8)c
-    let c_i8 = cg.builder.build_int_truncate(c_raw, i8_ty, "c_i8").unwrap();
-    let i2 = cg.builder.build_load(i64_ty, i_ptr, "i2").unwrap().into_int_value();
-    let gep = unsafe { cg.builder.build_gep(i8_ty, buf, &[i2], "chr_gep").unwrap() };
-    cg.builder.build_store(gep, c_i8).unwrap();
-
-    // i++
-    let i3 = cg.builder.build_load(i64_ty, i_ptr, "i3").unwrap().into_int_value();
-    let i_next = cg.builder.build_int_add(i3, i64_ty.const_int(1, false), "i_next").unwrap();
-    cg.builder.build_store(i_ptr, i_next).unwrap();
-
-    cg.builder.build_unconditional_branch(loop_cond).unwrap();
-    cg.loop_stack.pop();
-    cg.builder.position_at_end(loop_end);
-
-    // Null-terminate: buf[i] = 0
-    let i_final = cg.builder.build_load(i64_ty, i_ptr, "i_final").unwrap().into_int_value();
-    let null_gep = unsafe { cg.builder.build_gep(i8_ty, buf, &[i_final], "null_gep").unwrap() };
-    cg.builder.build_store(null_gep, i8_ty.const_zero()).unwrap();
-
-    Ok(buf.into())
-}
-
-fn compile_input<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    // Print the prompt first
-    let prompt = cg.compile_expr(&args[0])?;
-    let printf = super::super::builtin::get_or_declare_printf(cg);
-    let fmt = cg.builder.build_global_string_ptr("%s", "promptfmt").unwrap();
-    cg.builder.build_call(printf, &[fmt.as_pointer_value().into(), prompt.into()], "printprompt").unwrap();
-    compile_read(cg)
-}
-
-fn compile_exit<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let val = cg.compile_expr(&args[0])?;
-    let i32_val = cg.builder.build_int_truncate(val.into_int_value(), cg.context.i32_type(), "ec").unwrap();
-    let exit_ty = cg.context.void_type().fn_type(&[cg.context.i32_type().into()], false);
-    cg.module.add_function("exit", exit_ty, None);
-    cg.builder.build_call(cg.module.get_function("exit").unwrap(), &[i32_val.into()], "exit").unwrap();
-    Ok(cg.context.i64_type().const_zero().into())
-}
-
-fn compile_int_cast<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let val = cg.compile_expr(&args[0])?;
-    Ok(cg.builder.build_float_to_signed_int(val.into_float_value(), cg.context.i64_type(), "f2i").unwrap().into())
-}
-
-fn compile_float_cast<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let val = cg.compile_expr(&args[0])?;
-    Ok(cg.builder.build_signed_int_to_float(val.into_int_value(), cg.context.f64_type(), "i2f").unwrap().into())
-}
-
-fn compile_char_at<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let s = cg.compile_expr(&args[0])?;
-    let idx = cg.compile_expr(&args[1])?.into_int_value();
-    let ptr = s.into_pointer_value();
-    let elem = unsafe { cg.builder.build_gep(cg.context.i8_type(), ptr, &[idx], "ch").unwrap() };
-    let loaded = cg.builder.build_load(cg.context.i8_type(), elem, "char").unwrap();
-    // Zero-extend i8 to i64
-    Ok(cg.builder.build_int_z_extend(loaded.into_int_value(), cg.context.i64_type(), "ch_ext").unwrap().into())
-}
-
-fn compile_chr<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let val = cg.compile_expr(&args[0])?;
-    let i64_val = val.into_int_value();
-    let i8_val = cg.builder.build_int_truncate(i64_val, cg.context.i8_type(), "chr_trunc").unwrap();
-    // Use malloc for heap-allocated buffer (stack alloca is freed on return)
-    if cg.module.get_function("malloc").is_none() {
-        let malloc_ty = cg.context.ptr_type(inkwell::AddressSpace::default())
-            .fn_type(&[cg.context.i64_type().into()], false);
-        cg.module.add_function("malloc", malloc_ty, None);
-    }
-    let buf = cg.builder.build_call(
-        cg.module.get_function("malloc").unwrap(),
-        &[cg.context.i64_type().const_int(2, false).into()], "chr_malloc"
-    ).unwrap().try_as_basic_value().unwrap_basic().into_pointer_value();
-    cg.builder.build_store(buf, i8_val).unwrap();
-    let null_gep = unsafe {
-        cg.builder.build_gep(cg.context.i8_type(), buf, &[cg.context.i64_type().const_int(1, false)], "null_gep").unwrap()
-    };
-    cg.builder.build_store(null_gep, cg.context.i8_type().const_zero()).unwrap();
-    Ok(buf.into())
-}
-
-fn compile_str<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    if args.is_empty() { return Ok(cg.builder.build_global_string_ptr("", "empty_str").unwrap().as_pointer_value().into()); }
-    let val = cg.compile_expr(&args[0])?;
-    let i64_ty = cg.context.i64_type();
-    let i8_ty = cg.context.i8_type();
-
-    match val {
-        BasicValueEnum::PointerValue(p) => return Ok(p.into()),
-        BasicValueEnum::FloatValue(f) => {
-            let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
-            let buf = cg.builder.build_array_alloca(i8_ty, i64_ty.const_int(64, false), "str_buf").unwrap();
-            // Use sprintf (now linked via legacy_stdio_definitions.lib)
-            if cg.module.get_function("sprintf").is_none() {
-                let ft = i64_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], true);
-                cg.module.add_function("sprintf", ft, None);
-            }
-            let fmt = cg.builder.build_global_string_ptr("%g", "floatfmt").unwrap();
-            cg.builder.build_call(
-                cg.module.get_function("sprintf").unwrap(),
-                &[buf.into(), fmt.as_pointer_value().into(), f.into()],
-                "float_to_str"
-            ).unwrap();
-            return Ok(buf.into());
-        }
-        _ => {}
-    }
-
-    // Manual int-to-string: build string by reversing digits
-    let i = val.into_int_value();
-    let cf = cg.function.unwrap();
-    let i64_zero = i64_ty.const_zero();
-
-    // Buffer: 24 bytes is enough for any i64
-    let buf = cg.builder.build_array_alloca(i8_ty, i64_ty.const_int(24, false), "str_buf").unwrap();
-
-    // Detect negative
-    let is_neg = cg.builder.build_int_compare(inkwell::IntPredicate::SLT, i, i64_zero, "is_neg").unwrap();
-
-    // Get absolute value (for MIN_INT, int_neg overflow is fine)
-    let neg_i = cg.builder.build_int_neg(i, "neg_i").unwrap();
-    let abs_i = cg.builder.build_select(is_neg, neg_i, i, "abs_i").unwrap();
-
-    // Start at buffer end + 1, write null first, then digits backwards
-    let pos_alloca = cg.create_entry_alloca(i64_ty.into(), "str_pos");
-    let cur_alloca = cg.create_entry_alloca(i64_ty.into(), "str_cur");
-    cg.builder.build_store(cur_alloca, abs_i).unwrap();
-    // Initialize pos to 22 (we have 24 bytes, leave 1 for sign)
-    cg.builder.build_store(pos_alloca, i64_ty.const_int(22, false)).unwrap();
-
-    // Write null terminator at position 22 (will be overwritten if there are digits)
-    let null_at = unsafe { cg.builder.build_gep(i8_ty, buf, &[i64_ty.const_int(22, false)], "null_at").unwrap() };
-    cg.builder.build_store(null_at, i8_ty.const_zero()).unwrap();
-
-    // Digits loop: while cur != 0 { pos--; buf[pos] = '0' + cur % 10; cur /= 10; }
-    let cond_bb = cg.context.append_basic_block(cf, "st_cond");
-    let body_bb = cg.context.append_basic_block(cf, "st_body");
-    let after_bb = cg.context.append_basic_block(cf, "st_aft");
-    cg.builder.build_unconditional_branch(cond_bb).unwrap();
-
-    cg.builder.position_at_end(cond_bb);
-    let cv = cg.builder.build_load(i64_ty, cur_alloca, "cv").unwrap().into_int_value();
-    let is_done = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, cv, i64_zero, "isd").unwrap();
-    cg.builder.build_conditional_branch(is_done, after_bb, body_bb).unwrap();
-
-    cg.builder.position_at_end(body_bb);
-    cg.loop_stack.push((cond_bb, after_bb));
-    let cv2 = cg.builder.build_load(i64_ty, cur_alloca, "cv2").unwrap().into_int_value();
-    let dig = cg.builder.build_int_signed_rem(cv2, i64_ty.const_int(10, false), "dig").unwrap();
-    let ch = cg.builder.build_int_add(dig, i64_ty.const_int(48, false), "ch").unwrap();
-    let chi = cg.builder.build_int_truncate(ch, i8_ty, "chi").unwrap();
-    let p1 = cg.builder.build_load(i64_ty, pos_alloca, "p1").unwrap().into_int_value();
-    let p2 = cg.builder.build_int_sub(p1, i64_ty.const_int(1, false), "p2").unwrap();
-    cg.builder.build_store(pos_alloca, p2).unwrap();
-    let gp = unsafe { cg.builder.build_gep(i8_ty, buf, &[p2], "gp").unwrap() };
-    cg.builder.build_store(gp, chi).unwrap();
-    let dv = cg.builder.build_int_signed_div(cv2, i64_ty.const_int(10, false), "dv").unwrap();
-    cg.builder.build_store(cur_alloca, dv).unwrap();
-    cg.builder.build_unconditional_branch(cond_bb).unwrap();
-    cg.loop_stack.pop();
-
-    cg.builder.position_at_end(after_bb);
-
-    // If value was 0, overwrite null with '0' and move pos back
-    let iz = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, abs_i.into_int_value(), i64_zero, "iz").unwrap();
-    let zb = cg.context.append_basic_block(cf, "st_zb");
-    let sk = cg.context.append_basic_block(cf, "st_sk");
-    cg.builder.build_conditional_branch(iz, zb, sk).unwrap();
-    cg.builder.position_at_end(zb);
-    let pz = cg.builder.build_load(i64_ty, pos_alloca, "pz").unwrap().into_int_value();
-    let pz2 = cg.builder.build_int_sub(pz, i64_ty.const_int(1, false), "pz2").unwrap();
-    cg.builder.build_store(pos_alloca, pz2).unwrap();
-    let gz = unsafe { cg.builder.build_gep(i8_ty, buf, &[pz2], "gz").unwrap() };
-    cg.builder.build_store(gz, i8_ty.const_int(48, false)).unwrap();
-    cg.builder.build_unconditional_branch(sk).unwrap();
-
-    cg.builder.position_at_end(sk);
-
-    // Handle negative sign
-    let nb = cg.context.append_basic_block(cf, "st_nb");
-    let nn = cg.context.append_basic_block(cf, "st_nn");
-    cg.builder.build_conditional_branch(is_neg, nb, nn).unwrap();
-    cg.builder.position_at_end(nb);
-    let pn = cg.builder.build_load(i64_ty, pos_alloca, "pn").unwrap().into_int_value();
-    let pn2 = cg.builder.build_int_sub(pn, i64_ty.const_int(1, false), "pn2").unwrap();
-    cg.builder.build_store(pos_alloca, pn2).unwrap();
-    let gn = unsafe { cg.builder.build_gep(i8_ty, buf, &[pn2], "gn").unwrap() };
-    cg.builder.build_store(gn, i8_ty.const_int(45, false)).unwrap();
-    cg.builder.build_unconditional_branch(nn).unwrap();
-
-    cg.builder.position_at_end(nn);
-
-    // Return pointer to buf + pos
-    let fp = cg.builder.build_load(i64_ty, pos_alloca, "fp").unwrap().into_int_value();
-    let sp = unsafe { cg.builder.build_gep(i8_ty, buf, &[fp], "sp").unwrap() };
-    Ok(sp.into())
-}
-
-fn compile_getenv<'ctx>(cg: &mut CodeGen<'ctx>, _args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    // getenv is not available on all platforms with the current CRT setup
-    // Return an empty string as fallback
-    let empty = cg.builder.build_global_string_ptr("", "empty_env").unwrap();
-    Ok(empty.as_pointer_value().into())
-}
-
-fn compile_system<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let cmd = cg.compile_expr(&args[0])?;
-    let i64_ty = cg.context.i64_type();
-    if cg.module.get_function("system").is_none() {
-        let ft = i64_ty.fn_type(&[cg.context.ptr_type(inkwell::AddressSpace::default()).into()], false);
-        cg.module.add_function("system", ft, None);
-    }
-    let result = cg.builder.build_call(
-        cg.module.get_function("system").unwrap(),
-        &[cmd.into()], "system_call"
-    ).unwrap().try_as_basic_value().unwrap_basic();
-    Ok(result)
-}
-
-fn compile_pid<'ctx>(cg: &mut CodeGen<'ctx>, _args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let i64_ty = cg.context.i64_type();
-    // On Windows: _getpid(), on Unix: getpid()
-    for name in &["_getpid" as &str, "getpid"] {
-        if cg.module.get_function(name).is_none() {
-            let ft = i64_ty.fn_type(&[], false);
-            cg.module.add_function(name, ft, None);
-        }
-    }
-    let pname = if cg.module.get_function("_getpid").is_some() { "_getpid" } else { "getpid" };
-    let result = cg.builder.build_call(
-        cg.module.get_function(pname).unwrap(),
-        &[], "pid_call"
-    ).unwrap().try_as_basic_value().unwrap_basic();
-    Ok(result)
-}
-
-fn compile_cwd<'ctx>(cg: &mut CodeGen<'ctx>, _args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
-    let i64_ty = cg.context.i64_type();
-    let buf = cg.builder.build_array_alloca(cg.context.i8_type(), i64_ty.const_int(1024, false), "cwd_buf").unwrap();
-    // On Windows: _getcwd(), on Unix: getcwd()
-    for name in &["_getcwd" as &str, "getcwd"] {
-        if cg.module.get_function(name).is_none() {
-            let ft = ptr_ty.fn_type(&[ptr_ty.into(), i64_ty.into()], false);
-            cg.module.add_function(name, ft, None);
-        }
-    }
-    let cname = if cg.module.get_function("_getcwd").is_some() { "_getcwd" } else { "getcwd" };
-    cg.builder.build_call(
-        cg.module.get_function(cname).unwrap(),
-        &[buf.into(), i64_ty.const_int(1024, false).into()], "cwd_call"
-    ).unwrap();
-    Ok(buf.into())
-}
-
-fn compile_math1<'ctx>(cg: &mut CodeGen<'ctx>, name: &str, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let val = cg.compile_expr(&args[0])?;
-    let f = val.into_float_value();
-    let f64_ty = cg.context.f64_type();
-    let ft = f64_ty.fn_type(&[f64_ty.into()], false);
-    let func = match cg.module.get_function(name) {
-        Some(f) => f,
-        None => cg.module.add_function(name, ft, None),
-    };
-    let result = cg.builder.build_call(func, &[f.into()], name).unwrap();
-    Ok(match result.try_as_basic_value() { inkwell::values::ValueKind::Basic(bv) => bv, _ => f64_ty.const_float(0.0).into() })
-}
-
-fn compile_math2<'ctx>(cg: &mut CodeGen<'ctx>, name: &str, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let a = cg.compile_expr(&args[0])?;
-    let b = cg.compile_expr(&args[1])?;
-    let fa = a.into_float_value();
-    let fb = b.into_float_value();
-    let f64_ty = cg.context.f64_type();
-    let ft = f64_ty.fn_type(&[f64_ty.into(), f64_ty.into()], false);
-    let func = match cg.module.get_function(name) {
-        Some(f) => f,
-        None => cg.module.add_function(name, ft, None),
-    };
-    let result = cg.builder.build_call(func, &[fa.into(), fb.into()], name).unwrap();
-    Ok(match result.try_as_basic_value() { inkwell::values::ValueKind::Basic(bv) => bv, _ => f64_ty.const_float(0.0).into() })
-}
-
-fn compile_rand<'ctx>(cg: &mut CodeGen<'ctx>, _args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let i32_ty = cg.context.i32_type();
-    let ft = i32_ty.fn_type(&[], false);
-    let func = match cg.module.get_function("rand") {
-        Some(f) => f,
-        None => cg.module.add_function("rand", ft, None),
-    };
-    let result = cg.builder.build_call(func, &[], "rand").unwrap();
-    let val = match result.try_as_basic_value() {
-        inkwell::values::ValueKind::Basic(bv) => bv.into_int_value(),
-        _ => i32_ty.const_zero(),
-    };
-    // Zero-extend i32 to i64
-    Ok(cg.builder.build_int_z_extend(val, cg.context.i64_type(), "rand_ext").unwrap().into())
-}
-
-fn compile_srand<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let val = cg.compile_expr(&args[0])?.into_int_value();
-    let seed = cg.builder.build_int_truncate(val, cg.context.i32_type(), "seed_trunc").unwrap();
-    let ft = cg.context.void_type().fn_type(&[cg.context.i32_type().into()], false);
-    let func = match cg.module.get_function("srand") {
-        Some(f) => f,
-        None => cg.module.add_function("srand", ft, None),
-    };
-    cg.builder.build_call(func, &[seed.into()], "srand").unwrap();
-    Ok(cg.context.i64_type().const_zero().into())
 }
 
 fn subst_type_multi(ty: &Type, type_params: &[String], concrete_types: &[String]) -> Type {
