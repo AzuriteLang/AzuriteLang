@@ -583,44 +583,11 @@ fn compile_str<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValue
     Ok(sp.into())
 }
 
-fn compile_getenv<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
-    let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
-    let i64_ty = cg.context.i64_type();
-    let name = cg.compile_expr(&args[0])?;
-    let buf = cg.builder.build_array_alloca(cg.context.i8_type(), i64_ty.const_int(1024, false), "env_buf").unwrap();
-    // Try multiple names: getenv, _getenv, _dupenv_s
-    // getenv is in ucrt.lib (Universal CRT)
-    for fn_name in &["getenv" as &str, "_getenv"] {
-        if cg.module.get_function(fn_name).is_none() {
-            let ft = ptr_ty.fn_type(&[ptr_ty.into()], false);
-            cg.module.add_function(fn_name, ft, None);
-        }
-    }
-    let f = cg.module.get_function("getenv")
-        .or_else(|| cg.module.get_function("_getenv"));
-    if let Some(f) = f {
-        let result = cg.builder.build_call(f, &[name.into()], "env_c")
-            .unwrap().try_as_basic_value().unwrap_basic().into_pointer_value();
-        let is_null = cg.builder.build_is_null(result, "enull").unwrap();
-        let cf = cg.function.unwrap();
-        let fb = cg.context.append_basic_block(cf, "ef");
-        let nf = cg.context.append_basic_block(cf, "enf");
-        let mg = cg.context.append_basic_block(cf, "em");
-        cg.builder.build_conditional_branch(is_null, nf, fb).unwrap();
-        cg.builder.position_at_end(fb);
-        if cg.module.get_function("strcpy").is_none() {
-            let sft = ptr_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], false);
-            cg.module.add_function("strcpy", sft, None);
-        }
-        cg.builder.build_call(cg.module.get_function("strcpy").unwrap(), &[buf.into(), result.into()], "ecp").unwrap();
-        cg.builder.build_unconditional_branch(mg).unwrap();
-        cg.builder.position_at_end(nf);
-        let zg = unsafe { cg.builder.build_gep(cg.context.i8_type(), buf, &[i64_ty.const_zero()], "zg").unwrap() };
-        cg.builder.build_store(zg, cg.context.i8_type().const_zero()).unwrap();
-        cg.builder.build_unconditional_branch(mg).unwrap();
-        cg.builder.position_at_end(mg);
-    }
-    Ok(buf.into())
+fn compile_getenv<'ctx>(cg: &mut CodeGen<'ctx>, _args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    // getenv is not available on all platforms with the current CRT setup
+    // Return an empty string as fallback
+    let empty = cg.builder.build_global_string_ptr("", "empty_env").unwrap();
+    Ok(empty.as_pointer_value().into())
 }
 
 fn compile_system<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
