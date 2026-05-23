@@ -588,34 +588,38 @@ fn compile_getenv<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicVa
     let i64_ty = cg.context.i64_type();
     let name = cg.compile_expr(&args[0])?;
     let buf = cg.builder.build_array_alloca(cg.context.i8_type(), i64_ty.const_int(1024, false), "env_buf").unwrap();
-    // getenv on MSVC is actually _dupenv_s or getenv
-    if cg.module.get_function("getenv").is_none() {
-        let ft = ptr_ty.fn_type(&[ptr_ty.into()], false);
-        cg.module.add_function("getenv", ft, None);
+    // Try multiple names: getenv, _getenv, _dupenv_s
+    // getenv is in ucrt.lib (Universal CRT)
+    for fn_name in &["getenv" as &str, "_getenv"] {
+        if cg.module.get_function(fn_name).is_none() {
+            let ft = ptr_ty.fn_type(&[ptr_ty.into()], false);
+            cg.module.add_function(fn_name, ft, None);
+        }
     }
-    let result = cg.builder.build_call(
-        cg.module.get_function("getenv").unwrap(),
-        &[name.into()], "getenv_call"
-    ).unwrap().try_as_basic_value().unwrap_basic().into_pointer_value();
-    // Check if null (not found)
-    let is_null = cg.builder.build_is_null(result, "env_null").unwrap();
-    let cf = cg.function.unwrap();
-    let found_bb = cg.context.append_basic_block(cf, "env_found");
-    let not_found_bb = cg.context.append_basic_block(cf, "env_not_found");
-    let merge_bb = cg.context.append_basic_block(cf, "env_merge");
-    cg.builder.build_conditional_branch(is_null, not_found_bb, found_bb).unwrap();
-    cg.builder.position_at_end(found_bb);
-    // strcpy(buf, result)
-    if cg.module.get_function("strcpy").is_none() {
-        let strcpy_ty = ptr_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], false);
-        cg.module.add_function("strcpy", strcpy_ty, None);
+    let f = cg.module.get_function("getenv")
+        .or_else(|| cg.module.get_function("_getenv"));
+    if let Some(f) = f {
+        let result = cg.builder.build_call(f, &[name.into()], "env_c")
+            .unwrap().try_as_basic_value().unwrap_basic().into_pointer_value();
+        let is_null = cg.builder.build_is_null(result, "enull").unwrap();
+        let cf = cg.function.unwrap();
+        let fb = cg.context.append_basic_block(cf, "ef");
+        let nf = cg.context.append_basic_block(cf, "enf");
+        let mg = cg.context.append_basic_block(cf, "em");
+        cg.builder.build_conditional_branch(is_null, nf, fb).unwrap();
+        cg.builder.position_at_end(fb);
+        if cg.module.get_function("strcpy").is_none() {
+            let sft = ptr_ty.fn_type(&[ptr_ty.into(), ptr_ty.into()], false);
+            cg.module.add_function("strcpy", sft, None);
+        }
+        cg.builder.build_call(cg.module.get_function("strcpy").unwrap(), &[buf.into(), result.into()], "ecp").unwrap();
+        cg.builder.build_unconditional_branch(mg).unwrap();
+        cg.builder.position_at_end(nf);
+        let zg = unsafe { cg.builder.build_gep(cg.context.i8_type(), buf, &[i64_ty.const_zero()], "zg").unwrap() };
+        cg.builder.build_store(zg, cg.context.i8_type().const_zero()).unwrap();
+        cg.builder.build_unconditional_branch(mg).unwrap();
+        cg.builder.position_at_end(mg);
     }
-    cg.builder.build_call(cg.module.get_function("strcpy").unwrap(), &[buf.into(), result.into()], "env_cpy").unwrap();
-    cg.builder.build_unconditional_branch(merge_bb).unwrap();
-    cg.builder.position_at_end(not_found_bb);
-    cg.builder.build_store(buf, cg.context.i8_type().const_zero()).unwrap();
-    cg.builder.build_unconditional_branch(merge_bb).unwrap();
-    cg.builder.position_at_end(merge_bb);
     Ok(buf.into())
 }
 

@@ -20,7 +20,11 @@ use inkwell::context::Context;
 #[command(name = "azurite", about = "AzuriteLang compiler")]
 enum Cli {
     #[command(about = "Type-check source and report errors")]
-    Check { file: PathBuf },
+    Check {
+        file: PathBuf,
+        #[arg(long, help = "Force update dependencies")]
+        update: bool,
+    },
     #[command(about = "Compile source to executable")]
     Build {
         file: PathBuf,
@@ -28,6 +32,8 @@ enum Cli {
         output: Option<PathBuf>,
         #[arg(long, help = "Keep .ll file after compilation")]
         keep_ll: bool,
+        #[arg(long, help = "Force update dependencies")]
+        update: bool,
     },
     #[command(about = "Interactive REPL")]
     Repl,
@@ -46,17 +52,20 @@ enum Cli {
         #[arg(long, help = "Git revision")]
         rev: Option<String>,
     },
+    #[command(about = "Update all dependencies to latest")]
+    Update,
 }
 
 fn main() {
     let cli = Cli::parse();
 
     let result = match &cli {
-        Cli::Check { file } => cmd_check(file),
-        Cli::Build { file, output, keep_ll } => cmd_build(file, output.as_ref(), *keep_ll),
+        Cli::Check { file, update } => cmd_check(file, *update),
+        Cli::Build { file, output, keep_ll, update } => cmd_build(file, output.as_ref(), *keep_ll, *update),
         Cli::Repl => cmd_repl(),
         Cli::Init { dir } => cmd_init(dir),
         Cli::Install { name, git, path, rev } => cmd_install(name, git.as_deref(), path.as_deref(), rev.as_deref()),
+        Cli::Update => cmd_update(),
     };
 
     if let Err(msg) = result {
@@ -271,6 +280,18 @@ version = "0.1.0"
     Ok(())
 }
 
+fn cmd_update() -> Result<(), String> {
+    let cwd = std::env::current_dir().map_err(|e| format!("cannot get cwd: {}", e))?;
+    let manifest_path = find_manifest(&cwd).ok_or_else(|| "no azurite.toml found in current directory".to_string())?;
+    let content = read_file(&manifest_path)?;
+    let manifest = parse_manifest(&content)?;
+    let project_dir = manifest_path.parent().unwrap();
+    eprintln!("Updating dependencies in {}", manifest_path.display());
+    resolve_dependencies(&manifest, project_dir, true)?;
+    println!("All dependencies up to date.");
+    Ok(())
+}
+
 fn read_file(path: &PathBuf) -> Result<String, String> {
     fs::read_to_string(path).map_err(|e| format!("cannot read {}: {}", path.display(), e))
 }
@@ -312,13 +333,13 @@ fn resolve_module(source: &str, base_path: &Path, deps: &DepMap) -> Result<Progr
     Ok(Program { statements: resolved })
 }
 
-fn resolve_main(file: &Path) -> Result<(Program, String), String> {
+fn resolve_main(file: &Path, force_update: bool) -> Result<(Program, String), String> {
     let deps = if let Some(manifest_path) = find_manifest(file) {
         let content = read_file(&manifest_path)?;
         let manifest = parse_manifest(&content)?;
         let project_dir = manifest_path.parent().unwrap_or(Path::new("."));
         eprintln!("Loaded {}", manifest_path.display());
-        resolve_dependencies(&manifest, project_dir)?
+        resolve_dependencies(&manifest, project_dir, force_update)?.0
     } else {
         DepMap::new()
     };
@@ -328,8 +349,8 @@ fn resolve_main(file: &Path) -> Result<(Program, String), String> {
     Ok((program, source))
 }
 
-fn cmd_check(file: &PathBuf) -> Result<(), String> {
-    let (program, source) = resolve_main(file)?;
+fn cmd_check(file: &PathBuf, force_update: bool) -> Result<(), String> {
+    let (program, source) = resolve_main(file, force_update)?;
     let mut checker = Checker::new();
     match checker.check_program(&program) {
         Ok(()) => {
@@ -345,8 +366,8 @@ fn cmd_check(file: &PathBuf) -> Result<(), String> {
     }
 }
 
-fn cmd_build(file: &PathBuf, output: Option<&PathBuf>, keep_ll: bool) -> Result<(), String> {
-    let (program, source) = resolve_main(file)?;
+fn cmd_build(file: &PathBuf, output: Option<&PathBuf>, keep_ll: bool, force_update: bool) -> Result<(), String> {
+    let (program, source) = resolve_main(file, force_update)?;
 
     let mut checker = Checker::new();
     if let Err(errors) = checker.check_program(&program) {
