@@ -30,6 +30,7 @@ pub struct CodeGen<'ctx> {
     pub variables: HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>)>,
     pub struct_types: HashMap<String, ClassInfo<'ctx>>,
     pub generic_classes: HashMap<String, (Vec<String>, Vec<ClassField>, Vec<Stmt>)>,
+    pub enums: HashMap<String, Vec<EnumVariant>>,
     pub function: Option<FunctionValue<'ctx>>,
     pub self_ptr: Option<PointerValue<'ctx>>,
     pub current_class: Option<String>,
@@ -49,6 +50,7 @@ impl<'ctx> CodeGen<'ctx> {
             variables: HashMap::new(),
             struct_types: HashMap::new(),
             generic_classes: HashMap::new(),
+            enums: HashMap::new(),
             function: None,
             self_ptr: None,
             current_class: None,
@@ -165,7 +167,11 @@ impl<'ctx> CodeGen<'ctx> {
                 class::compile_class(self, name, fields, methods, parent)?;
                 Ok(None)
             }
-            Stmt::Import { .. } | Stmt::Enum { .. } => {
+            Stmt::Import { .. } => {
+                Ok(None)
+            }
+            Stmt::Enum { name, variants } => {
+                self.enums.insert(name.name.clone(), variants.clone());
                 Ok(None)
             }
             Stmt::For { name, iterable, body } => {

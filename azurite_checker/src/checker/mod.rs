@@ -15,6 +15,7 @@ pub struct Checker {
     pub expected_return: Option<Type>,
     pub generic_classes: HashMap<String, (Vec<String>, Vec<ClassField>, Vec<Stmt>)>,
     pub concrete_classes: HashMap<String, Vec<ClassField>>,
+    pub enums: HashMap<String, Vec<EnumVariant>>,
 }
 
 impl Checker {
@@ -27,6 +28,7 @@ impl Checker {
             expected_return: None,
             generic_classes: HashMap::new(),
             concrete_classes: HashMap::new(),
+            enums: HashMap::new(),
         };
         checker.register_builtins();
         checker

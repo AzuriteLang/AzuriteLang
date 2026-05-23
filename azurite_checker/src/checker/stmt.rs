@@ -26,7 +26,11 @@ pub fn check_stmt(c: &mut Checker, stmt: &Stmt) -> Option<Type> {
             }
             type_
         }
-        Stmt::Import { .. } | Stmt::Enum { .. } => None,
+        Stmt::Import { .. } => None,
+        Stmt::Enum { name, variants } => {
+            c.enums.insert(name.name.clone(), variants.clone());
+            None
+        }
         Stmt::Class { name, type_params, parent: _, fields, methods } => {
             if !type_params.is_empty() {
                 c.generic_classes.insert(name.name.clone(), (type_params.clone(), fields.clone(), methods.clone()));

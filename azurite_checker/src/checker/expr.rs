@@ -71,10 +71,21 @@ pub fn check_expr(c: &mut Checker, expr: &Expr) -> Option<Type> {
         Expr::Null => Some(Type::Null),
         Expr::Self_ | Expr::Super => Some(Type::Void),
         Expr::FieldAccess { obj, field, null_safe } => {
-            let span = obj.span();
+            let span = expr.span();
             let obj_type = check_expr(c, obj);
             if *null_safe && matches!(obj_type, Some(Type::Null)) {
                 return Some(Type::Null);
+            }
+            // Check for enum variant access: Color.Red
+            if let Some(Type::Void) = obj_type {
+                if let Expr::Ident(ident) = obj.as_ref() {
+                    if c.enums.contains_key(&ident.name) {
+                        let is_variant = c.enums.get(&ident.name).map_or(false, |v| v.iter().any(|ev| ev.name.name == *field));
+                        if is_variant {
+                            return Some(Type::Instance { name: ident.name.clone() });
+                        }
+                    }
+                }
             }
             match obj_type {
                 Some(ref t) => resolve_instance_field(c, t, field, span),
@@ -109,12 +120,31 @@ pub fn check_expr(c: &mut Checker, expr: &Expr) -> Option<Type> {
                 return Some(Type::Null);
             }
             let obj_type = check_expr(c, obj);
+            // Check for enum variant access in expression: Color.Red
+            if let Some(Type::Void) = obj_type {
+                if let Expr::Ident(ident) = obj.as_ref() {
+                    if c.enums.contains_key(&ident.name) {
+                        let is_variant = c.enums.get(&ident.name).map_or(false, |v| v.iter().any(|ev| ev.name.name == *method));
+                        if is_variant {
+                            for a in args { check_expr(c, a); }
+                            return Some(Type::Instance { name: ident.name.clone() });
+                        }
+                    }
+                }
+            }
             match obj_type {
                 Some(ref t) => resolve_instance_method(c, t, method, args, span),
                 None => { for a in args { check_expr(c, a); } None }
             }
         }
-        Expr::EnumVariant { args, .. } => { for a in args { check_expr(c, a); } Some(Type::Void) }
+        Expr::EnumVariant { enum_name, args, .. } => {
+            for a in args { check_expr(c, a); }
+            if c.enums.contains_key(enum_name) {
+                Some(Type::Instance { name: enum_name.clone() })
+            } else {
+                Some(Type::Void)
+            }
+        }
         Expr::Array(elems) => {
             let mut elem_type = None;
             for e in elems {
@@ -132,13 +162,37 @@ pub fn check_expr(c: &mut Checker, expr: &Expr) -> Option<Type> {
                 None => None,
             }
         }
-        Expr::Match { value, arms } => { check_expr(c, value); for arm in arms { check_expr(c, &arm.body); } Some(Type::Void) }
+        Expr::Match { value, arms } => {
+            let val_type = check_expr(c, value);
+            // Check match exhaustiveness for enum types
+            if let Some(Type::Instance { name: enum_name }) = val_type {
+                if let Some(variants) = c.enums.get(&enum_name) {
+                    let has_wildcard = arms.iter().any(|a| matches!(a.pattern, Pattern::Wildcard | Pattern::Ident(_)));
+                    if !has_wildcard {
+                        let covered: Vec<&str> = arms.iter().filter_map(|a| {
+                            if let Pattern::EnumVariant { ref variant, .. } = a.pattern {
+                                Some(variant.as_str())
+                            } else { None }
+                        }).collect();
+                        let missing: Vec<&str> = variants.iter()
+                            .filter(|v| !covered.contains(&v.name.name.as_str()))
+                            .map(|v| v.name.name.as_str())
+                            .collect();
+                        if !missing.is_empty() {
+                            c.error(expr.span(), format!("non-exhaustive match: missing variants {:?}", missing));
+                        }
+                    }
+                }
+            }
+            for arm in arms { check_expr(c, &arm.body); }
+            Some(Type::Void)
+        }
         Expr::Range { start, end } => { check_expr(c, start); check_expr(c, end); Some(Type::Void) }
         Expr::Ident(ident) => {
             match c.scope.lookup(&ident.name) {
                 Some(sym) => Some(sym.type_.clone()),
                 None => {
-                    if c.generic_classes.contains_key(&ident.name) || c.concrete_classes.contains_key(&ident.name) {
+                    if c.generic_classes.contains_key(&ident.name) || c.concrete_classes.contains_key(&ident.name) || c.enums.contains_key(&ident.name) {
                         Some(Type::Void)
                     } else {
                         c.error(ident.span, format!("undefined '{}'", ident.name));

@@ -21,6 +21,16 @@ pub fn compile_control<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<Basi
             Ok(cg.context.i8_type().const_int(tag % 256, false).into())
         }
         Expr::FieldAccess { obj, field, null_safe } => {
+            // Check for enum variant access: Color.Red
+            if let Expr::Ident(ident) = obj.as_ref() {
+                if let Some(variants) = cg.enums.get(&ident.name) {
+                    if let Some(idx) = variants.iter().position(|v| v.name.name == *field) {
+                        let tag = cg.context.i64_type().const_int(idx as u64, false);
+                        if *null_safe { return Ok(tag.into()); }
+                        return Ok(tag.into());
+                    }
+                }
+            }
             let obj_val = cg.compile_expr(obj)?;
             let ptr = obj_val.into_pointer_value();
             if *null_safe {
