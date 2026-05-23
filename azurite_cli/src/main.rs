@@ -211,9 +211,14 @@ fn cmd_build(file: &PathBuf, output: Option<&PathBuf>) -> Result<(), String> {
         let mut cmd = std::process::Command::new(clang);
         cmd.args([&ll_path.to_string_lossy(), "-o", &exe.to_string_lossy()]);
         cmd.args(["-Wl,/defaultlib:msvcrt", "-Wl,/defaultlib:oldnames"]);
-        match cmd.status() {
-            Ok(s) if s.success() => println!("Executable: {}", exe.display()),
-            _ => println!("LLVM IR generated. Install clang for .exe"),
+        let clang_ok = match cmd.status() {
+            Ok(s) if s.success() => { std::fs::remove_file(&ll_path).ok(); true }
+            _ => false,
+        };
+        if clang_ok {
+            println!("Executable: {}", exe.display());
+        } else {
+            println!("LLVM IR generated. Install clang for .exe");
         }
     }
 
