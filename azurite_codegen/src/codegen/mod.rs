@@ -42,6 +42,7 @@ pub struct CodeGen<'ctx> {
     pub err_ptr: Option<PointerValue<'ctx>>,
     pub caught_flag: Option<PointerValue<'ctx>>,
     pub try_end_bb: Option<BasicBlock<'ctx>>,
+    pub any_tags: HashMap<String, PointerValue<'ctx>>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -67,6 +68,7 @@ impl<'ctx> CodeGen<'ctx> {
             err_ptr: None,
             caught_flag: None,
             try_end_bb: None,
+            any_tags: HashMap::new(),
         }
     }
 
@@ -81,12 +83,36 @@ impl<'ctx> CodeGen<'ctx> {
 
     pub fn compile_stmt(&mut self, stmt: &Stmt, _is_tail: bool) -> Result<Option<BasicValueEnum<'ctx>>, AzError> {
         match stmt {
-            Stmt::Let { name, value, .. } => {
+            Stmt::Let { name, type_annotation, value } => {
+                let is_any = matches!(type_annotation, Some(azurite_parser::ast::Type::Name(ref n)) if n == "any");
                 let val = self.compile_expr(value)?;
-                let val_type = val.get_type();
-                let alloca = self.create_entry_alloca(val_type, &name.name);
-                self.builder.build_store(alloca, val).unwrap();
-                self.variables.insert(name.name.clone(), (alloca, val_type));
+                if is_any {
+                    // For any, allocate [2 x i64]: [0]=value, [1]=tag
+                    let alloc = self.builder.build_array_alloca(self.context.i64_type(), self.context.i64_type().const_int(2, false), &name.name).unwrap();
+                    let tag = match val {
+                        BasicValueEnum::IntValue(_) => 0i64,
+                        BasicValueEnum::FloatValue(_) => 1,
+                        BasicValueEnum::PointerValue(_) => 2,
+                        _ => 3,
+                    };
+                    // Store converted value
+                    let val_i64 = match val {
+                        BasicValueEnum::PointerValue(p) => self.builder.build_ptr_to_int(p, self.context.i64_type(), "p2i").unwrap().into(),
+                        BasicValueEnum::FloatValue(f) => self.builder.build_float_to_signed_int(f, self.context.i64_type(), "f2i").unwrap().into(),
+                        v => v,
+                    };
+                    let v_gep = unsafe { self.builder.build_gep(self.context.i64_type(), alloc, &[self.context.i64_type().const_zero()], "v").unwrap() };
+                    self.builder.build_store(v_gep, val_i64).unwrap();
+                    let t_gep = unsafe { self.builder.build_gep(self.context.i64_type(), alloc, &[self.context.i64_type().const_int(1, false)], "t").unwrap() };
+                    self.builder.build_store(t_gep, self.context.i64_type().const_int(tag as u64, false)).unwrap();
+                    self.variables.insert(name.name.clone(), (alloc, self.context.i64_type().into()));
+                    self.any_tags.insert(name.name.clone(), t_gep);
+                } else {
+                    let val_type = val.get_type();
+                    let alloca = self.create_entry_alloca(val_type, &name.name);
+                    self.builder.build_store(alloca, val).unwrap();
+                    self.variables.insert(name.name.clone(), (alloca, val_type));
+                }
                 // Store array length for literals
                 if let Expr::Array(elems) = value.as_ref() {
                     let len_name = format!("{}.__len", name.name);

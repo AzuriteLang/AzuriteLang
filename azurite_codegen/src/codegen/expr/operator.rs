@@ -209,15 +209,24 @@ fn compile_assign<'ctx>(cg: &mut CodeGen<'ctx>, left: &Expr, right: &Expr, span:
             let var_name = i.name.clone();
             let rhs = cg.compile_expr(right)?;
             match cg.variables.get(&var_name) {
-                Some((ptr, ty)) => {
-                    // Convert rhs to match alloca type (for `any` variables)
-                    let converted = if *ty == cg.context.i64_type().into() {
-                        to_i64(cg, rhs)
+                Some((ptr, _)) => {
+                    if let Some(tag_ptr) = cg.any_tags.get(&var_name) {
+                        // any variable: store value at [0] and tag at [1]
+                        let val_i64 = to_i64(cg, rhs);
+                        let v_gep = unsafe { cg.builder.build_gep(cg.context.i64_type(), *ptr, &[cg.context.i64_type().const_zero()], "v").unwrap() };
+                        cg.builder.build_store(v_gep, val_i64).unwrap();
+                        let tag = match rhs {
+                            BasicValueEnum::IntValue(_) => 0i64,
+                            BasicValueEnum::FloatValue(_) => 1,
+                            BasicValueEnum::PointerValue(_) => 2,
+                            _ => 3,
+                        };
+                        cg.builder.build_store(*tag_ptr, cg.context.i64_type().const_int(tag as u64, false)).unwrap();
+                        Ok(rhs)
                     } else {
-                        rhs
-                    };
-                    cg.builder.build_store(*ptr, converted).unwrap();
-                    Ok(rhs)
+                        cg.builder.build_store(*ptr, rhs).unwrap();
+                        Ok(rhs)
+                    }
                 }
                 None => Err(AzError::new(ErrorKind::Semantic, span, format!("undefined '{}'", var_name)))
             }
