@@ -28,6 +28,7 @@ func main() {
 - **Setter** `obj.field = val`
 - **Type operator** `x is string`
 - **Chain comparisons** `0 <= i < 10`
+- **Error handling** — `try { } catch e { }` and `throw`
 - **JIT REPL** — interactive execution with rustyline and LLVM JIT
 - **VS Code extension** — syntax highlighting for `.az` files
 - **Package manager** — git dependencies with `azurite.toml`
