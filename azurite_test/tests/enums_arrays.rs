@@ -1,6 +1,5 @@
 use azurite_lexer::{Lexer, TokenKind};
 use azurite_parser::ast::*;
-use azurite_parser::Parser;
 use azurite_test::parse_prog;
 
 // --- Enums ---

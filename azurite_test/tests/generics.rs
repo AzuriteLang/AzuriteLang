@@ -1,4 +1,4 @@
-use azurite_test::{check, parse_prog};
+use azurite_test::check;
 
 #[test]
 fn test_generic_box_new_int() {
