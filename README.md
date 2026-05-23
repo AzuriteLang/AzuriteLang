@@ -23,6 +23,11 @@ func main() {
 - **Null-safe operator** `?.`
 - **String interpolation** `"Hello \{name}"`
 - **Exhaustive match checking** — missing enum variants are reported
+- **Loop keyword** `loop { }`
+- **Default function params** `func f(x = 42)`
+- **Setter** `obj.field = val`
+- **Type operator** `x is string`
+- **Chain comparisons** `0 <= i < 10`
 - **JIT REPL** — interactive execution with rustyline and LLVM JIT
 - **Package manager** — git dependencies with `azurite.toml`
 - **Standard library** — `string`, `math`, `random`, `color` libs on GitHub
@@ -312,7 +317,7 @@ azurite_codegen/    # LLVM IR codegen (feature-gated)
 azurite_errors/     # Error messages with spans
 azurite_resolver/   # Package/dependency resolver (azurite.toml)
 azurite_cli/        # CLI (check, build, repl, init)
-azurite_test/       # 320+ integration tests
+azurite_test/       # 330+ integration tests
 ```
 
 ## License
