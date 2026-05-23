@@ -10,6 +10,7 @@ use azurite_errors::Diagnostic;
 use azurite_lexer::Lexer;
 use azurite_parser::ast::{Program, Stmt};
 use azurite_parser::Parser;
+use azurite_resolver::{find_dep_entry, parse_manifest, resolve_dependencies, DepMap};
 
 #[cfg(feature = "llvm")]
 use inkwell::context::Context;
@@ -27,6 +28,11 @@ enum Cli {
     },
     #[command(about = "Interactive REPL")]
     Repl,
+    #[command(about = "Initialize a new Azurite project with azurite.toml")]
+    Init {
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+    },
 }
 
 fn main() {
@@ -36,6 +42,7 @@ fn main() {
         Cli::Check { file } => cmd_check(file),
         Cli::Build { file, output } => cmd_build(file, output.as_ref()),
         Cli::Repl => cmd_repl(),
+        Cli::Init { dir } => cmd_init(dir),
     };
 
     if let Err(msg) = result {
@@ -79,21 +86,66 @@ fn cmd_repl() -> Result<(), String> {
     Ok(())
 }
 
+fn cmd_init(dir: &Path) -> Result<(), String> {
+    fs::create_dir_all(dir).map_err(|e| format!("cannot create directory: {}", e))?;
+    let manifest_path = dir.join("azurite.toml");
+    if manifest_path.exists() {
+        return Err(format!("azurite.toml already exists in {}", dir.display()));
+    }
+    let default_name = dir.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("azurite_project");
+    let content = format!(
+        r#"[package]
+name = "{}"
+version = "0.1.0"
+
+[dependencies]
+# string = {{ git = "https://github.com/azurite/string" }}
+# math  = {{ git = "https://github.com/azurite/math" }}
+"#,
+        default_name
+    );
+    fs::write(&manifest_path, &content)
+        .map_err(|e| format!("cannot write azurite.toml: {}", e))?;
+    println!("Created {}", manifest_path.display());
+    Ok(())
+}
+
 fn read_file(path: &PathBuf) -> Result<String, String> {
     fs::read_to_string(path).map_err(|e| format!("cannot read {}: {}", path.display(), e))
 }
 
-fn resolve_module(source: &str, base_path: &Path) -> Result<Program, String> {
+fn find_manifest(start: &Path) -> Option<PathBuf> {
+    let mut current = Some(start.to_path_buf());
+    while let Some(dir) = current {
+        let manifest = dir.join("azurite.toml");
+        if manifest.exists() {
+            return Some(manifest);
+        }
+        current = dir.parent().map(|p| p.to_path_buf());
+    }
+    None
+}
+
+fn resolve_module(source: &str, base_path: &Path, deps: &DepMap) -> Result<Program, String> {
     let (mut parser, _tokens) = Parser::from_source(source).map_err(|e| e.to_string())?;
     let program = parser.parse_program().map_err(|e| e.to_string())?;
     let mut resolved = Vec::new();
     for stmt in program.statements {
         match stmt {
             Stmt::Import { path, .. } => {
-                let import_path = base_path.parent().unwrap_or(Path::new(".")).join(&path);
-                let import_source = read_file(&import_path.to_path_buf())?;
-                let import_prog = resolve_module(&import_source, &import_path)?;
-                resolved.extend(import_prog.statements);
+                if let Some(dep_path) = deps.get(&path) {
+                    let entry = find_dep_entry(dep_path)?;
+                    let import_source = read_file(&entry)?;
+                    let import_prog = resolve_module(&import_source, &entry, deps)?;
+                    resolved.extend(import_prog.statements);
+                } else {
+                    let import_path = base_path.parent().unwrap_or(Path::new(".")).join(&path);
+                    let import_source = read_file(&import_path.to_path_buf())?;
+                    let import_prog = resolve_module(&import_source, &import_path, deps)?;
+                    resolved.extend(import_prog.statements);
+                }
             }
             other => resolved.push(other),
         }
@@ -102,8 +154,18 @@ fn resolve_module(source: &str, base_path: &Path) -> Result<Program, String> {
 }
 
 fn resolve_main(file: &Path) -> Result<(Program, String), String> {
+    let deps = if let Some(manifest_path) = find_manifest(file) {
+        let content = read_file(&manifest_path)?;
+        let manifest = parse_manifest(&content)?;
+        let project_dir = manifest_path.parent().unwrap_or(Path::new("."));
+        eprintln!("Loaded {}", manifest_path.display());
+        resolve_dependencies(&manifest, project_dir)?
+    } else {
+        DepMap::new()
+    };
+
     let source = read_file(&file.to_path_buf())?;
-    let program = resolve_module(&source, file)?;
+    let program = resolve_module(&source, file, &deps)?;
     Ok((program, source))
 }
 

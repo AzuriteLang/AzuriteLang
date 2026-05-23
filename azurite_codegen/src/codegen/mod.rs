@@ -87,6 +87,8 @@ impl<'ctx> CodeGen<'ctx> {
             }
             Stmt::Func { name, params, return_type, body } => {
                 let is_void = return_type.is_none() || matches!(return_type, Some(azurite_parser::ast::Type::Name(ref n)) if n == "void" || n == "none");
+                let ret_is_string = matches!(return_type, Some(azurite_parser::ast::Type::Name(ref n)) if n == "string");
+                let ret_is_float = matches!(return_type, Some(azurite_parser::ast::Type::Name(ref n)) if n == "float");
 
                 let param_types: Vec<BasicMetadataTypeEnum> = params.iter()
                     .map(|p| self.az_param_type(&p.type_annotation))
@@ -94,6 +96,12 @@ impl<'ctx> CodeGen<'ctx> {
 
                 let fn_val = if is_void {
                     let ft = self.context.void_type().fn_type(&param_types, false);
+                    self.module.add_function(&name.name, ft, None)
+                } else if ret_is_string {
+                    let ft = self.context.ptr_type(inkwell::AddressSpace::default()).fn_type(&param_types, false);
+                    self.module.add_function(&name.name, ft, None)
+                } else if ret_is_float {
+                    let ft = self.context.f64_type().fn_type(&param_types, false);
                     self.module.add_function(&name.name, ft, None)
                 } else {
                     let ft = self.context.i64_type().fn_type(&param_types, false);
@@ -118,7 +126,13 @@ impl<'ctx> CodeGen<'ctx> {
                     if is_void {
                         self.builder.build_return(None).unwrap();
                     } else if let Some(v) = last_val {
-                        self.builder.build_return(Some(&self.any_to_i64(v))).unwrap();
+                        if ret_is_string {
+                            self.builder.build_return(Some(&v)).unwrap();
+                        } else if ret_is_float {
+                            self.builder.build_return(Some(&v)).unwrap();
+                        } else {
+                            self.builder.build_return(Some(&self.any_to_i64(v))).unwrap();
+                        }
                     } else {
                         self.builder.build_return(Some(&self.context.i64_type().const_zero())).unwrap();
                     }
