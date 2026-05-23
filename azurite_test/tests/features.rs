@@ -131,3 +131,57 @@ fn test_question_token() {
     let tokens = Lexer::new("?").tokenize().unwrap();
     assert_eq!(tokens[0].kind.to_string(), "?");
 }
+
+// ===== Compound assignment operators =====
+
+#[test]
+fn test_compound_assign_plus() {
+    assert!(check("func main() { let x = 1 x += 2 }").is_ok());
+}
+
+#[test]
+fn test_compound_assign_minus() {
+    assert!(check("func main() { let x = 1 x -= 2 }").is_ok());
+}
+
+#[test]
+fn test_compound_assign_star() {
+    assert!(check("func main() { let x = 5 x *= 3 }").is_ok());
+}
+
+#[test]
+fn test_compound_assign_slash() {
+    assert!(check("func main() { let x = 6 x /= 2 }").is_ok());
+}
+
+#[test]
+fn test_compound_assign_percent() {
+    assert!(check("func main() { let x = 7 x %= 3 }").is_ok());
+}
+
+#[test]
+fn test_compound_assign_lexer_tokens() {
+    let tokens = Lexer::new("+= -= *= /= %=").tokenize().unwrap();
+    let kinds: Vec<String> = tokens.iter().map(|t| t.kind.to_string()).collect();
+    assert_eq!(kinds, ["+=", "-=", "*=", "/=", "%=", "EOF"]);
+}
+
+#[test]
+fn test_compound_assign_bitwise_lexer() {
+    let tokens = Lexer::new("&= |= ^= <<= >>=").tokenize().unwrap();
+    let kinds: Vec<String> = tokens.iter().map(|t| t.kind.to_string()).collect();
+    assert_eq!(kinds, ["&=", "|=", "^=", "<<=", ">>=", "EOF"]);
+}
+
+#[test]
+fn test_compound_assign_bitwise() {
+    assert!(check("func main() { let x = 1 x &= 3 }").is_ok());
+    assert!(check("func main() { let x = 1 x |= 2 }").is_ok());
+    assert!(check("func main() { let x = 5 x ^= 3 }").is_ok());
+}
+
+#[test]
+fn test_compound_assign_shift() {
+    assert!(check("func main() { let x = 1 x <<= 2 }").is_ok());
+    assert!(check("func main() { let x = 8 x >>= 1 }").is_ok());
+}

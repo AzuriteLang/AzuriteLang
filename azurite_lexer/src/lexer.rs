@@ -87,9 +87,21 @@ impl Lexer {
             '"' => self.read_string(),
             '\'' => self.read_char(),
             'a'..='z' | 'A'..='Z' | '_' => self.read_identifier_or_keyword(),
-            '+' => self.single_char_token(TokenKind::Plus),
+            '+' => {
+                if self.peek_next() == Some('=') {
+                    self.bump();
+                    self.bump();
+                    Ok(Token::new(TokenKind::PlusAssign, self.prev_span(2)))
+                } else {
+                    self.single_char_token(TokenKind::Plus)
+                }
+            }
             '-' => {
-                if self.peek_next() == Some('>') {
+                if self.peek_next() == Some('=') {
+                    self.bump();
+                    self.bump();
+                    Ok(Token::new(TokenKind::MinusAssign, self.prev_span(2)))
+                } else if self.peek_next() == Some('>') {
                     self.bump();
                     self.bump();
                     Ok(Token::new(TokenKind::Arrow, self.prev_span(2)))
@@ -97,9 +109,33 @@ impl Lexer {
                     self.single_char_token(TokenKind::Minus)
                 }
             }
-            '*' => self.single_char_token(TokenKind::Star),
-            '/' => self.single_char_token(TokenKind::Slash),
-            '%' => self.single_char_token(TokenKind::Percent),
+            '*' => {
+                if self.peek_next() == Some('=') {
+                    self.bump();
+                    self.bump();
+                    Ok(Token::new(TokenKind::StarAssign, self.prev_span(2)))
+                } else {
+                    self.single_char_token(TokenKind::Star)
+                }
+            }
+            '/' => {
+                if self.peek_next() == Some('=') {
+                    self.bump();
+                    self.bump();
+                    Ok(Token::new(TokenKind::SlashAssign, self.prev_span(2)))
+                } else {
+                    self.single_char_token(TokenKind::Slash)
+                }
+            }
+            '%' => {
+                if self.peek_next() == Some('=') {
+                    self.bump();
+                    self.bump();
+                    Ok(Token::new(TokenKind::PercentAssign, self.prev_span(2)))
+                } else {
+                    self.single_char_token(TokenKind::Percent)
+                }
+            }
             '=' => {
                 if self.peek_next() == Some('>') {
                     self.bump();
@@ -114,7 +150,12 @@ impl Lexer {
                 if self.peek_next() == Some('<') {
                     self.bump();
                     self.bump();
-                    Ok(Token::new(TokenKind::Shl, self.prev_span(2)))
+                    if self.peek() == Some('=') {
+                        self.bump();
+                        Ok(Token::new(TokenKind::ShlAssign, self.prev_span(3)))
+                    } else {
+                        Ok(Token::new(TokenKind::Shl, self.prev_span(2)))
+                    }
                 } else {
                     self.try_two_char('=', TokenKind::Less, TokenKind::LessEqual)
                 }
@@ -123,14 +164,43 @@ impl Lexer {
                 if self.peek_next() == Some('>') {
                     self.bump();
                     self.bump();
-                    Ok(Token::new(TokenKind::Shr, self.prev_span(2)))
+                    if self.peek() == Some('=') {
+                        self.bump();
+                        Ok(Token::new(TokenKind::ShrAssign, self.prev_span(3)))
+                    } else {
+                        Ok(Token::new(TokenKind::Shr, self.prev_span(2)))
+                    }
                 } else {
                     self.try_two_char('=', TokenKind::Greater, TokenKind::GreaterEqual)
                 }
             }
-            '&' => self.try_two_char('&', TokenKind::BitAnd, TokenKind::AndAnd),
-            '|' => self.try_two_char('|', TokenKind::BitOr, TokenKind::OrOr),
-            '^' => self.single_char_token(TokenKind::BitXor),
+            '&' => {
+                if self.peek_next() == Some('=') {
+                    self.bump();
+                    self.bump();
+                    Ok(Token::new(TokenKind::BitAndAssign, self.prev_span(2)))
+                } else {
+                    self.try_two_char('&', TokenKind::BitAnd, TokenKind::AndAnd)
+                }
+            }
+            '|' => {
+                if self.peek_next() == Some('=') {
+                    self.bump();
+                    self.bump();
+                    Ok(Token::new(TokenKind::BitOrAssign, self.prev_span(2)))
+                } else {
+                    self.try_two_char('|', TokenKind::BitOr, TokenKind::OrOr)
+                }
+            }
+            '^' => {
+                if self.peek_next() == Some('=') {
+                    self.bump();
+                    self.bump();
+                    Ok(Token::new(TokenKind::BitXorAssign, self.prev_span(2)))
+                } else {
+                    self.single_char_token(TokenKind::BitXor)
+                }
+            }
             '(' => self.single_char_token(TokenKind::LParen),
             ')' => self.single_char_token(TokenKind::RParen),
             '{' => self.single_char_token(TokenKind::LBrace),

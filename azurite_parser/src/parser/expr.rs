@@ -71,13 +71,25 @@ pub fn parse_expr(p: &mut Parser, min_bp: u8) -> Result<Expr, AzError> {
                 lhs = Expr::Range { start: Box::new(lhs), end: Box::new(rhs) };
             }
             Some(op_kind) if parser::is_binop(&op_kind) => {
-                let op = parser::token_to_binop(op_kind).unwrap();
+                let op = parser::token_to_binop(op_kind.clone()).unwrap();
                 let (l_bp, r_bp) = parser::infix_binding_power(op);
                 if l_bp < min_bp { break; }
                 p.advance();
                 let rhs = parse_expr(p, r_bp)?;
-                // Check for chained comparisons: a < b < c → (a < b) && (b < c)
-                if parser::is_comparison(op) {
+                // Compound assignment desugar: x += 1 → x = x + 1
+                if let Some(compound_op) = parser::token_to_compound_binop(op_kind.clone()) {
+                    let left_clone = lhs.clone();
+                    lhs = Expr::Binary {
+                        left: Box::new(left_clone),
+                        op: BinOp::Assign,
+                        right: Box::new(Expr::Binary {
+                            left: Box::new(lhs),
+                            op: compound_op,
+                            right: Box::new(rhs),
+                        }),
+                    };
+                    continue;
+                } else if parser::is_comparison(op) {
                     if let Some(next_kind) = p.peek_kind() {
                         if let Some(next_op) = parser::token_to_binop(next_kind) {
                             if parser::is_comparison(next_op) {

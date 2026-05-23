@@ -122,6 +122,10 @@ pub fn is_binop(kind: &TokenKind) -> bool {
         | TokenKind::AndAnd | TokenKind::OrOr | TokenKind::And | TokenKind::Or
         | TokenKind::BitAnd | TokenKind::BitOr | TokenKind::BitXor | TokenKind::Shl | TokenKind::Shr
         | TokenKind::Is
+        | TokenKind::PlusAssign | TokenKind::MinusAssign | TokenKind::StarAssign
+        | TokenKind::SlashAssign | TokenKind::PercentAssign | TokenKind::BitAndAssign
+        | TokenKind::BitOrAssign | TokenKind::BitXorAssign | TokenKind::ShlAssign
+        | TokenKind::ShrAssign
     )
 }
 
@@ -137,6 +141,16 @@ pub fn token_to_binop(kind: TokenKind) -> Option<BinOp> {
         TokenKind::Slash => Some(BinOp::Div),
         TokenKind::Percent => Some(BinOp::Mod),
         TokenKind::Assign => Some(BinOp::Assign),
+        TokenKind::PlusAssign => Some(BinOp::Assign),
+        TokenKind::MinusAssign => Some(BinOp::Assign),
+        TokenKind::StarAssign => Some(BinOp::Assign),
+        TokenKind::SlashAssign => Some(BinOp::Assign),
+        TokenKind::PercentAssign => Some(BinOp::Assign),
+        TokenKind::BitAndAssign => Some(BinOp::Assign),
+        TokenKind::BitOrAssign => Some(BinOp::Assign),
+        TokenKind::BitXorAssign => Some(BinOp::Assign),
+        TokenKind::ShlAssign => Some(BinOp::Assign),
+        TokenKind::ShrAssign => Some(BinOp::Assign),
         TokenKind::Equal => Some(BinOp::Eq),
         TokenKind::NotEqual => Some(BinOp::Neq),
         TokenKind::Less => Some(BinOp::Lt),
@@ -151,6 +165,22 @@ pub fn token_to_binop(kind: TokenKind) -> Option<BinOp> {
         TokenKind::Shl => Some(BinOp::Shl),
         TokenKind::Shr => Some(BinOp::Shr),
         TokenKind::Is => Some(BinOp::Is),
+        _ => None,
+    }
+}
+
+pub fn token_to_compound_binop(kind: TokenKind) -> Option<BinOp> {
+    match kind {
+        TokenKind::PlusAssign => Some(BinOp::Add),
+        TokenKind::MinusAssign => Some(BinOp::Sub),
+        TokenKind::StarAssign => Some(BinOp::Mul),
+        TokenKind::SlashAssign => Some(BinOp::Div),
+        TokenKind::PercentAssign => Some(BinOp::Mod),
+        TokenKind::BitAndAssign => Some(BinOp::BitAnd),
+        TokenKind::BitOrAssign => Some(BinOp::BitOr),
+        TokenKind::BitXorAssign => Some(BinOp::BitXor),
+        TokenKind::ShlAssign => Some(BinOp::Shl),
+        TokenKind::ShrAssign => Some(BinOp::Shr),
         _ => None,
     }
 }
