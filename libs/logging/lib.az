@@ -1,0 +1,31 @@
+// logging — simple logger with levels
+
+let __log_level = 2  // 0=debug, 1=info, 2=warn, 3=error
+
+func log_set_level(level: int) {
+    __log_level = level
+}
+
+func log_debug(msg: string) {
+    if __log_level <= 0 {
+        print("[DEBUG] " + msg)
+    }
+}
+
+func log_info(msg: string) {
+    if __log_level <= 1 {
+        print("[INFO] " + msg)
+    }
+}
+
+func log_warn(msg: string) {
+    if __log_level <= 2 {
+        print("[WARN] " + msg)
+    }
+}
+
+func log_error(msg: string) {
+    if __log_level <= 3 {
+        print("[ERROR] " + msg)
+    }
+}

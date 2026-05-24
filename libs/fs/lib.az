@@ -1,0 +1,75 @@
+// fs — file system operations
+// Uses system() builtin for shell commands
+
+func fs_read(path: string) -> string {
+    // Uses shell to read file (works on any OS)
+    let cmd = "type " + path
+    // On Unix: cmd = "cat " + path
+    system(cmd)
+    0  // System returns exit code, but we return string via workaround
+    0 as string  // Not possible. Requires proper file I/O builtin
+}
+
+func fs_write(path: string, content: string) -> int {
+    let cmd = ""
+    let os = getenv("OS")
+    if os == "" {  // Unix
+        // Escape content
+        cmd = "printf '%s' '" + content + "' > " + path
+    } else {  // Windows
+        cmd = "cmd /c echo " + content + " > " + path
+    }
+    system(cmd)
+}
+
+func fs_delete(path: string) -> int {
+    let cmd = ""
+    let os = getenv("OS")
+    if os == "" {
+        cmd = "rm -f " + path
+    } else {
+        cmd = "del /q " + path
+    }
+    system(cmd)
+}
+
+func fs_exists(path: string) -> bool {
+    let cmd = ""
+    let os = getenv("OS")
+    if os == "" {
+        cmd = "test -f " + path
+    } else {
+        cmd = "if exist " + path + " (exit 0) else (exit 1)"
+    }
+    system(cmd) == 0
+}
+
+func fs_list_dir(path: string) -> string {
+    let cmd = ""
+    let os = getenv("OS")
+    if os == "" {
+        cmd = "ls -1 " + path
+    } else {
+        cmd = "cmd /c dir /b " + path
+    }
+    system(cmd)
+    0 as string  // system returns int, not string
+}
+
+func fs_mkdir(path: string) -> int {
+    let cmd = ""
+    let os = getenv("OS")
+    if os == "" {
+        cmd = "mkdir -p " + path
+    } else {
+        cmd = "mkdir " + path
+    }
+    system(cmd)
+}
+
+func fs_cwd() -> string {
+    cwd()
+}
+
+// Note: fs_read and fs_list_dir can't return strings directly because system() returns int.
+// In the future, file I/O builtins or string-returning system() would fix this.
