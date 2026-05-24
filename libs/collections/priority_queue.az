@@ -1,0 +1,42 @@
+// PriorityQueue — sorted by priority (higher value = higher priority)
+
+func priority_queue_new() -> int[] {
+    []
+}
+
+func priority_queue_push(pq: int[], val: int) {
+    pq.push(val)
+    // Bubble up: sort descending
+    pq.sort()
+    pq.reverse()
+}
+
+func priority_queue_pop(pq: int[]) -> int {
+    pq.pop()
+}
+
+func priority_queue_peek(pq: int[]) -> int {
+    pq[pq.len() - 1]
+}
+
+func priority_queue_len(pq: int[]) -> int {
+    pq.len()
+}
+
+func priority_queue_is_empty(pq: int[]) -> bool {
+    pq.is_empty()
+}
+
+func priority_queue_clear(pq: int[]) {
+    pq.clear()
+}
+
+func priority_queue_to_array(pq: int[]) -> int[] {
+    let result: int[] = []
+    let i = 0
+    while i < pq.len() {
+        result.push(pq[i])
+        i = i + 1
+    }
+    result
+}

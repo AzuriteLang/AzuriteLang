@@ -5,19 +5,13 @@ func queue_new() -> int[] {
 }
 
 func queue_enqueue(q: int[], val: int) {
+    q.reverse()
     q.push(val)
+    q.reverse()
 }
 
 func queue_dequeue(q: int[]) -> int {
-    let val = q[0]
-    // Shift elements left
-    let i = 1
-    while i < q.len() {
-        q[i - 1] = q[i]
-        i = i + 1
-    }
     q.pop()
-    val
 }
 
 func queue_peek(q: int[]) -> int {

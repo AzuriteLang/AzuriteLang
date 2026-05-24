@@ -1,0 +1,177 @@
+// HashMap — key → value map (open addressing, linear probing)
+// Internal layout: [count, capacity, deleted, key_0, val_0, key_1, val_1, ...]
+
+const -1 = -1
+const -2 = -2
+const 8 = 8
+
+func hash_map_new() -> int[] {
+    let cap = 8
+    let result: int[] = []
+    result.push(0)    // count
+    result.push(cap)  // capacity
+    result.push(0)    // deleted count
+    let i = 0
+    while i < cap {
+        result.push(-1)  // key
+        result.push(0)         // value
+        i = i + 1
+    }
+    result
+}
+
+func hm_hash(key: int, cap: int) -> int {
+    if key < 0 { key = -key }
+    key % cap
+}
+
+func hash_map_set(m: int[], key: int, val: int) {
+    let cap = m[1]
+    let idx = hm_hash(key, cap)
+    let i = 0
+    while i < cap {
+        let pos = (idx + i) % cap
+        let k = m[3 + pos * 2]
+        if k == key {
+            m[3 + pos * 2 + 1] = val
+            return
+        }
+        if k == -1 || k == -2 {
+            m[3 + pos * 2] = key
+            m[3 + pos * 2 + 1] = val
+            m[0] = m[0] + 1
+            if k == -2 { m[2] = m[2] - 1 }
+            if (m[0] + m[2]) * 4 > cap * 3 {
+                hash_map_resize(m)
+            }
+            return
+        }
+        i = i + 1
+    }
+}
+
+func hash_map_get(m: int[], key: int) -> int {
+    let cap = m[1]
+    let idx = hm_hash(key, cap)
+    let i = 0
+    while i < cap {
+        let pos = (idx + i) % cap
+        let k = m[3 + pos * 2]
+        if k == key {
+            return m[3 + pos * 2 + 1]
+        }
+        if k == -1 { return 0 }
+        i = i + 1
+    }
+    0
+}
+
+func hash_map_contains(m: int[], key: int) -> bool {
+    let cap = m[1]
+    let idx = hm_hash(key, cap)
+    let i = 0
+    while i < cap {
+        let pos = (idx + i) % cap
+        let k = m[3 + pos * 2]
+        if k == key { return true }
+        if k == -1 { return false }
+        i = i + 1
+    }
+    false
+}
+
+func hash_map_remove(m: int[], key: int) {
+    let cap = m[1]
+    let idx = hm_hash(key, cap)
+    let i = 0
+    while i < cap {
+        let pos = (idx + i) % cap
+        let k = m[3 + pos * 2]
+        if k == key {
+            m[3 + pos * 2] = -2
+            m[0] = m[0] - 1
+            m[2] = m[2] + 1
+            return
+        }
+        if k == -1 { return }
+        i = i + 1
+    }
+}
+
+func hash_map_len(m: int[]) -> int {
+    m[0]
+}
+
+func hash_map_is_empty(m: int[]) -> bool {
+    m[0] == 0
+}
+
+func hash_map_clear(m: int[]) {
+    let cap = m[1]
+    let i = 0
+    while i < cap {
+        m[3 + i * 2] = -1
+        m[3 + i * 2 + 1] = 0
+        i = i + 1
+    }
+    m[0] = 0
+    m[2] = 0
+}
+
+func hash_map_keys(m: int[]) -> int[] {
+    let result: int[] = []
+    let cap = m[1]
+    let i = 0
+    while i < cap {
+        let k = m[3 + i * 2]
+        if k >= 0 { result.push(k) }
+        i = i + 1
+    }
+    result
+}
+
+func hash_map_values(m: int[]) -> int[] {
+    let result: int[] = []
+    let cap = m[1]
+    let i = 0
+    while i < cap {
+        let k = m[3 + i * 2]
+        if k >= 0 { result.push(m[3 + i * 2 + 1]) }
+        i = i + 1
+    }
+    result
+}
+
+func hash_map_resize(m: int[]) {
+    let old_cap = m[1]
+    let new_cap = old_cap * 2
+    let old_keys: int[] = []
+    let old_vals: int[] = []
+    let i = 0
+    while i < old_cap {
+        let k = m[3 + i * 2]
+        if k >= 0 {
+            old_keys.push(k)
+            old_vals.push(m[3 + i * 2 + 1])
+        }
+        i = i + 1
+    }
+    m[1] = new_cap
+    m[0] = 0
+    m[2] = 0
+    let j = 0
+    while j < new_cap {
+        if 3 + j * 2 < m.len() {
+            m[3 + j * 2] = -1
+        } else {
+            m.push(-1)
+            m.push(0)
+        }
+        j = j + 1
+    }
+    let k = 0
+    while k < old_keys.len() {
+        hash_map_set(m, old_keys[k], old_vals[k])
+        k = k + 1
+    }
+}

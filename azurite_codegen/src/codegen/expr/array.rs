@@ -69,7 +69,6 @@ pub fn compile_array_reverse<'ctx>(cg: &mut CodeGen<'ctx>, _var_name: &str, ptr:
     let half = cg.builder.build_int_signed_div(len, i64_ty.const_int(2, false), "half").unwrap();
     let cond_bb = cg.context.append_basic_block(cf, "rv_cond");
     let body_bb = cg.context.append_basic_block(cf, "rv_body");
-    let _inc_bb = cg.context.append_basic_block(cf, "rv_inc");
     cg.builder.build_unconditional_branch(cond_bb).unwrap();
     cg.builder.position_at_end(cond_bb);
     let ci = cg.builder.build_load(i64_ty, i_ptr, "ci").unwrap().into_int_value();

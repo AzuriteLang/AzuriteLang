@@ -151,7 +151,8 @@ impl<'ctx> CodeGen<'ctx> {
                 let ret_is_float = matches!(return_type, Some(azurite_parser::ast::Type::Name(ref n)) if n == "float");
                 let ret_is_tuple = matches!(return_type, Some(azurite_parser::ast::Type::Tuple(_)));
                 let ret_name = return_type.as_ref().and_then(|t| if let azurite_parser::ast::Type::Name(n) = t { Some(n.as_str()) } else { None });
-                let ret_is_instance = !is_void && !ret_is_string && !ret_is_float && !ret_is_tuple && ret_name.map_or(false, |n| n != "int" && n != "bool");
+                let ret_is_array = matches!(return_type, Some(azurite_parser::ast::Type::Array(_, _)));
+                let ret_is_instance = !is_void && !ret_is_string && !ret_is_float && !ret_is_tuple && !ret_is_array && ret_name.map_or(false, |n| n != "int" && n != "bool");
 
                 let param_types: Vec<BasicMetadataTypeEnum> = params.iter()
                     .map(|p| self.az_param_type(&p.type_annotation))
@@ -161,7 +162,7 @@ impl<'ctx> CodeGen<'ctx> {
                 let fn_val = if is_void {
                     let ft = self.context.void_type().fn_type(&param_types, is_var_args);
                     self.module.add_function(&name.name, ft, None)
-                } else if ret_is_string || ret_is_instance || ret_is_tuple {
+                } else if ret_is_string || ret_is_instance || ret_is_tuple || ret_is_array {
                     let ft = self.context.ptr_type(inkwell::AddressSpace::default()).fn_type(&param_types, is_var_args);
                     self.module.add_function(&name.name, ft, None)
                 } else if ret_is_float {
@@ -204,7 +205,7 @@ impl<'ctx> CodeGen<'ctx> {
                     if is_void {
                         self.builder.build_return(None).unwrap();
                     } else if let Some(v) = last_val {
-                        if ret_is_string || ret_is_instance || ret_is_tuple {
+                        if ret_is_string || ret_is_instance || ret_is_tuple || ret_is_array {
                             self.builder.build_return(Some(&v)).unwrap();
                         } else if ret_is_float {
                             match v {
@@ -220,7 +221,7 @@ impl<'ctx> CodeGen<'ctx> {
                     } else if ret_is_float {
                         let f0: BasicValueEnum = self.context.f64_type().const_float(0.0).into();
                         self.builder.build_return(Some(&f0)).unwrap();
-                    } else if ret_is_instance || ret_is_tuple {
+                    } else if ret_is_instance || ret_is_tuple || ret_is_array {
                         let null_ptr: BasicValueEnum = self.context.ptr_type(inkwell::AddressSpace::default()).const_zero().into();
                         self.builder.build_return(Some(&null_ptr)).unwrap();
                     } else {

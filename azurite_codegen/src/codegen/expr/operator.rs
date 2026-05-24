@@ -231,6 +231,27 @@ fn compile_assign<'ctx>(cg: &mut CodeGen<'ctx>, left: &Expr, right: &Expr, span:
                 None => Err(AzError::new(ErrorKind::Semantic, span, format!("undefined '{}'", var_name)))
             }
         }
+        Expr::Index { obj, index } => {
+            let obj_val = cg.compile_expr(obj)?;
+            let idx_val = cg.compile_expr(index)?;
+            let ptr = obj_val.into_pointer_value();
+            let idx_int = idx_val.into_int_value();
+            let rhs = cg.compile_expr(right)?;
+            let i64_ty = cg.context.i64_type();
+            // Get elem type tag to convert value if needed
+            let elem_tag = match obj.as_ref() {
+                Expr::Ident(ident) => cg.array_elem_types.get(&ident.name).copied().unwrap_or(0),
+                _ => 0,
+            };
+            let val_for_store = match elem_tag {
+                1 => cg.builder.build_bit_cast(rhs.into_float_value(), i64_ty, "f2i").unwrap().into(),
+                2 => cg.builder.build_ptr_to_int(rhs.into_pointer_value(), i64_ty, "p2i").unwrap().into(),
+                _ => rhs,
+            };
+            let gep = unsafe { cg.builder.build_gep(i64_ty, ptr, &[idx_int], "aset").unwrap() };
+            cg.builder.build_store(gep, val_for_store).unwrap();
+            Ok(rhs)
+        }
         Expr::FieldAccess { obj, field, null_safe: _ } => {
             let _ = cg.compile_expr(obj)?;
             let obj_ptr = match obj.as_ref() {

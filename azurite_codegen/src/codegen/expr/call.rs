@@ -62,11 +62,6 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                     let elem_tag = cg.array_elem_types.get(&var_name).copied().unwrap_or(0);
                     match method.as_str() {
                         "len" => {
-                            if let Some(&len_ptr) = cg.array_lengths.get(&var_name) {
-                                let val = cg.builder.build_load(cg.context.i64_type(), len_ptr, "arr_len").unwrap();
-                                return Ok(val);
-                            }
-                            // Fallback: read from heap header
                             let hdr = unsafe { cg.builder.build_gep(cg.context.i64_type(), arr_heap_ptr, &[cg.context.i64_type().const_int(-1i64 as u64, true)], "hdr").unwrap() };
                             let val = cg.builder.build_load(cg.context.i64_type(), hdr, "arr_len").unwrap();
                             return Ok(val);

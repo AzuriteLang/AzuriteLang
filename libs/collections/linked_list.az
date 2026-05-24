@@ -1,0 +1,9 @@
+// LinkedList — doubly linked list (using two parallel arrays: prev, next)
+// Each node is an index into the arrays. -1 = null.
+
+func linked_list_new() -> int[] {
+    // Returns [head, tail, count, data...]
+    // Using flat array: [head_idx, tail_idx, count, data_0, data_1, ...]
+    // where data values are chained via a separate index system
+    []
+}

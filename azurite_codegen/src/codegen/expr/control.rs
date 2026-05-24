@@ -182,20 +182,20 @@ fn compile_match<'ctx>(cg: &mut CodeGen<'ctx>, value: &Expr, arms: &[MatchArm]) 
 
 fn compile_array<'ctx>(cg: &mut CodeGen<'ctx>, elems: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
     let count = elems.len() as u32;
-    if count == 0 { return Ok(cg.context.i64_type().const_zero().into()); }
     let i64_ty = cg.context.i64_type();
-    // Allocate count+1: one extra slot for the length header at [0]
-    let alloc_count = i64_ty.const_int(count as u64 + 1, false);
+    // Allocate count + 1 (for header) + 1 (for at least one data slot when empty)
+    let alloc_slots = count as u64 + 2;
+    let alloc_count = i64_ty.const_int(alloc_slots, false);
     let raw_ptr = cg.builder.build_array_malloc(i64_ty, alloc_count, "arr_raw").unwrap();
     // Store length at [0]
-    let header = unsafe { cg.builder.build_gep(i64_ty, raw_ptr, &[cg.context.i32_type().const_zero()], "hdr").unwrap() };
+    let header = unsafe { cg.builder.build_gep(i64_ty, raw_ptr, &[i64_ty.const_zero()], "hdr").unwrap() };
     cg.builder.build_store(header, i64_ty.const_int(count as u64, false)).unwrap();
     // Data starts at [1]. Return pointer to data (ptr[1])
-    let data_ptr = unsafe { cg.builder.build_gep(i64_ty, raw_ptr, &[cg.context.i32_type().const_int(1, false)], "arr").unwrap() };
+    let data_ptr = unsafe { cg.builder.build_gep(i64_ty, raw_ptr, &[i64_ty.const_int(1, false)], "arr").unwrap() };
     for (i, elem) in elems.iter().enumerate() {
         let val = cg.compile_expr(elem)?;
         let val_i64 = val_to_i64(cg, val);
-        let gep = unsafe { cg.builder.build_gep(i64_ty, data_ptr, &[cg.context.i32_type().const_int(i as u64, false)], "idx").unwrap() };
+        let gep = unsafe { cg.builder.build_gep(i64_ty, data_ptr, &[i64_ty.const_int(i as u64, false)], "idx").unwrap() };
         cg.builder.build_store(gep, val_i64).unwrap();
     }
     Ok(data_ptr.into())
