@@ -1,0 +1,90 @@
+// encoding — Base64 and Hex encoding/decoding
+
+const BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+const BASE64_URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+func hex_encode(data: int[]) -> string {
+    let result = ""
+    let i = 0
+    while i < data.len() {
+        let b = data[i] % 256
+        let hi = b / 16
+        let lo = b % 16
+        if hi < 10 { result = result + chr(48 + hi) } else { result = result + chr(65 + hi - 10) }
+        if lo < 10 { result = result + chr(48 + lo) } else { result = result + chr(65 + lo - 10) }
+        i = i + 1
+    }
+    result
+}
+
+func hex_decode(s: string) -> int[] {
+    let result: int[] = []
+    let i = 0
+    while i + 1 < len(s) {
+        let hi = hex_val(char_at(s, i))
+        let lo = hex_val(char_at(s, i + 1))
+        result.push(hi * 16 + lo)
+        i = i + 2
+    }
+    result
+}
+
+func hex_val(c: int) -> int {
+    if c >= 48 && c <= 57 { return c - 48 }
+    if c >= 65 && c <= 70 { return c - 55 }
+    if c >= 97 && c <= 102 { return c - 87 }
+    0
+}
+
+func base64_encode(data: int[]) -> string {
+    let result = ""
+    let i = 0
+    while i < data.len() {
+        let b0 = data[i]
+        let b1 = 0
+        let b2 = 0
+        if i + 1 < data.len() { b1 = data[i + 1] }
+        if i + 2 < data.len() { b2 = data[i + 2] }
+        let triple = (b0 % 256) * 65536 + (b1 % 256) * 256 + (b2 % 256)
+        let c0 = triple / 262144
+        let c1 = (triple / 4096) % 64
+        let c2 = (triple / 64) % 64
+        let c3 = triple % 64
+        result = result + chr(char_at(BASE64_CHARS, c0))
+        result = result + chr(char_at(BASE64_CHARS, c1))
+        if i + 1 < data.len() { result = result + chr(char_at(BASE64_CHARS, c2)) } else { result = result + "=" }
+        if i + 2 < data.len() { result = result + chr(char_at(BASE64_CHARS, c3)) } else { result = result + "=" }
+        i = i + 3
+    }
+    result
+}
+
+func base64_decode(s: string) -> int[] {
+    let result: int[] = []
+    let i = 0
+    let slen = len(s)
+    while i < slen {
+        let c0 = b64_val(char_at(s, i))
+        let c1 = 0
+        let c2 = 0
+        let c3 = 0
+        if i + 1 < slen { c1 = b64_val(char_at(s, i + 1)) }
+        if i + 2 < slen && char_at(s, i + 2) != 61 { c2 = b64_val(char_at(s, i + 2)) }
+        if i + 3 < slen && char_at(s, i + 3) != 61 { c3 = b64_val(char_at(s, i + 3)) }
+        let triple = c0 * 262144 + c1 * 4096 + c2 * 64 + c3
+        result.push(triple / 65536)
+        if c2 > 0 { result.push((triple / 256) % 256) }
+        if c3 > 0 { result.push(triple % 256) }
+        i = i + 4
+    }
+    result
+}
+
+func b64_val(c: int) -> int {
+    if c >= 65 && c <= 90 { return c - 65 }
+    if c >= 97 && c <= 122 { return c - 71 }
+    if c >= 48 && c <= 57 { return c + 4 }
+    if c == 43 { return 62 }
+    if c == 47 { return 63 }
+    0
+}

@@ -1,0 +1,138 @@
+// datetime — Unix timestamp utilities
+// All times are Unix timestamps (seconds since epoch)
+
+func datetime_now() -> int {
+    // Returns current Unix timestamp (seconds since epoch)
+    // Uses the `time` function if available
+    let result = 0
+    // The compiler doesn't have a built-in time function, so this
+    // returns 0 and requires the system lib for actual time
+    result
+}
+
+func datetime_from_parts(year: int, month: int, day: int, hour: int, min: int, sec: int) -> int {
+    // Convert date parts to Unix timestamp (simplified, works for 2020+)
+    let y = year
+    let m = month
+    if m <= 2 { y = y - 1; m = m + 12 }
+    let yoff = y - 2020
+    let days = yoff * 365 + yoff / 4
+    let mdays: int[] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
+    days = days + mdays[m - 1] + (day - 1)
+    if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) && month > 2 { days = days + 1 }
+    days * 86400 + hour * 3600 + min * 60 + sec
+}
+
+func datetime_year(ts: int) -> int {
+    // Extract year from timestamp (simplified)
+    let days = ts / 86400
+    let y = 2020
+    while true {
+        let diny = 365
+        if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { diny = 366 }
+        if days < diny { return y }
+        days = days - diny
+        y = y + 1
+    }
+    y
+}
+
+func datetime_month(ts: int) -> int {
+    let days = ts / 86400
+    let y = 2020
+    while true {
+        let diny = 365
+        if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { diny = 366 }
+        if days < diny { break }
+        days = days - diny
+        y = y + 1
+    }
+    let mdays: int[] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { mdays[1] = 29 }
+    let m = 0
+    while m < 12 {
+        if days < mdays[m] { return m + 1 }
+        days = days - mdays[m]
+        m = m + 1
+    }
+    12
+}
+
+func datetime_day(ts: int) -> int {
+    let days = ts / 86400
+    let y = 2020
+    while true {
+        let diny = 365
+        if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { diny = 366 }
+        if days < diny { break }
+        days = days - diny
+        y = y + 1
+    }
+    let mdays: int[] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { mdays[1] = 29 }
+    let m = 0
+    while m < 12 {
+        if days < mdays[m] { return days + 1 }
+        days = days - mdays[m]
+        m = m + 1
+    }
+    days + 1
+}
+
+func datetime_hour(ts: int) -> int {
+    (ts % 86400) / 3600
+}
+
+func datetime_minute(ts: int) -> int {
+    (ts % 3600) / 60
+}
+
+func datetime_second(ts: int) -> int {
+    ts % 60
+}
+
+func datetime_format(ts: int, fmt: string) -> string {
+    let result = ""
+    let i = 0
+    while i < len(fmt) {
+        let c = char_at(fmt, i)
+        if c == 37 && i + 1 < len(fmt) {  // %
+            i = i + 1
+            let spec = char_at(fmt, i)
+            if spec == 89 { result = result + int_to_str_pad(datetime_year(ts), 4) }     // Y
+            else if spec == 109 { result = result + int_to_str_pad(datetime_month(ts), 2) }  // m
+            else if spec == 100 { result = result + int_to_str_pad(datetime_day(ts), 2) }    // d
+            else if spec == 72 { result = result + int_to_str_pad(datetime_hour(ts), 2) }    // H
+            else if spec == 77 { result = result + int_to_str_pad(datetime_minute(ts), 2) }  // M
+            else if spec == 83 { result = result + int_to_str_pad(datetime_second(ts), 2) }  // S
+            else { result = result + chr(spec) }
+        } else {
+            result = result + chr(c)
+        }
+        i = i + 1
+    }
+    result
+}
+
+func int_to_str_pad(n: int, pad: int) -> string {
+    let s = int_to_str(n)
+    while len(s) < pad {
+        s = "0" + s
+    }
+    s
+}
+
+func int_to_str(n: int) -> string {
+    if n == 0 { return "0" }
+    let result = ""
+    let x = n
+    let neg = false
+    if x < 0 { neg = true; x = -x }
+    while x > 0 {
+        let d = x % 10
+        result = chr(48 + d) + result
+        x = x / 10
+    }
+    if neg { result = "-" + result }
+    result
+}

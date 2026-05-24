@@ -1,0 +1,152 @@
+// text — StringBuilder and string utilities
+
+func string_repeat(s: string, count: int) -> string {
+    let result = ""
+    let i = 0
+    while i < count {
+        result = result + s
+        i = i + 1
+    }
+    result
+}
+
+func string_join(arr: int[], separator: string) -> string {
+    let result = ""
+    let i = 0
+    while i < arr.len() {
+        if i > 0 { result = result + separator }
+        result = result + int_to_str(arr[i])
+        i = i + 1
+    }
+    result
+}
+
+func string_split(s: string, delimiter: int) -> int[] {
+    let result: int[] = []
+    let current = ""
+    let i = 0
+    while i < len(s) {
+        let c = char_at(s, i)
+        if c == delimiter {
+            let val = parse_int(current)
+            result.push(val)
+            current = ""
+        } else {
+            current = current + chr(c)
+        }
+        i = i + 1
+    }
+    if current != "" {
+        let val = parse_int(current)
+        result.push(val)
+    }
+    result
+}
+
+func parse_int(s: string) -> int {
+    let slen = len(s)
+    if slen == 0 { return 0 }
+    let neg = 0
+    let start = 0
+    if char_at(s, 0) == 45 { neg = 1; start = 1 }
+    let result = 0
+    let i = start
+    while i < slen {
+        let c = char_at(s, i)
+        if c >= 48 && c <= 57 {
+            result = result * 10 + (c - 48)
+        }
+        i = i + 1
+    }
+    if neg == 1 { result = -result }
+    result
+}
+
+func int_to_str(n: int) -> string {
+    if n == 0 { return "0" }
+    let result = ""
+    let x = n
+    let neg = false
+    if x < 0 { neg = true; x = -x }
+    while x > 0 {
+        let d = x % 10
+        result = chr(48 + d) + result
+        x = x / 10
+    }
+    if neg { result = "-" + result }
+    result
+}
+
+func string_starts_with(s: string, prefix: string) -> bool {
+    let s_len = len(s)
+    let p_len = len(prefix)
+    if p_len > s_len { return false }
+    let i = 0
+    while i < p_len {
+        if char_at(s, i) != char_at(prefix, i) { return false }
+        i = i + 1
+    }
+    true
+}
+
+func string_ends_with(s: string, suffix: string) -> bool {
+    let s_len = len(s)
+    let suf_len = len(suffix)
+    if suf_len > s_len { return false }
+    let offset = s_len - suf_len
+    let i = 0
+    while i < suf_len {
+        if char_at(s, offset + i) != char_at(suffix, i) { return false }
+        i = i + 1
+    }
+    true
+}
+
+func string_contains(s: string, sub: string) -> bool {
+    let s_len = len(s)
+    let sub_len = len(sub)
+    if sub_len > s_len { return false }
+    if sub_len == 0 { return true }
+    let i = 0
+    while i <= s_len - sub_len {
+        let found = true
+        let j = 0
+        while j < sub_len {
+            if char_at(s, i + j) != char_at(sub, j) { found = false }
+            j = j + 1
+        }
+        if found { return true }
+        i = i + 1
+    }
+    false
+}
+
+func string_to_upper(s: string) -> string {
+    let result = ""
+    let i = 0
+    while i < len(s) {
+        let c = char_at(s, i)
+        if c >= 97 && c <= 122 {
+            result = result + chr(c - 32)
+        } else {
+            result = result + chr(c)
+        }
+        i = i + 1
+    }
+    result
+}
+
+func string_to_lower(s: string) -> string {
+    let result = ""
+    let i = 0
+    while i < len(s) {
+        let c = char_at(s, i)
+        if c >= 65 && c <= 90 {
+            result = result + chr(c + 32)
+        } else {
+            result = result + chr(c)
+        }
+        i = i + 1
+    }
+    result
+}

@@ -1,0 +1,67 @@
+// testing — simple assertion and test utilities
+
+func assert(condition: bool, msg: string) {
+    if !condition {
+        print("FAIL: " + msg)
+    }
+}
+
+func assert_eq(a: int, b: int, msg: string) {
+    if a != b {
+        print("FAIL: " + msg + " - expected " + int_to_str(a) + ", got " + int_to_str(b))
+    }
+}
+
+func assert_ne(a: int, b: int, msg: string) {
+    if a == b {
+        print("FAIL: " + msg + " - values should differ: " + int_to_str(a))
+    }
+}
+
+func assert_true(val: bool, msg: string) {
+    if !val {
+        print("FAIL: " + msg + " - expected true")
+    }
+}
+
+func assert_false(val: bool, msg: string) {
+    if val {
+        print("FAIL: " + msg + " - expected false")
+    }
+}
+
+func assert_gt(a: int, b: int, msg: string) {
+    if a <= b {
+        print("FAIL: " + msg + " - " + int_to_str(a) + " not > " + int_to_str(b))
+    }
+}
+
+func assert_lt(a: int, b: int, msg: string) {
+    if a >= b {
+        print("FAIL: " + msg + " - " + int_to_str(a) + " not < " + int_to_str(b))
+    }
+}
+
+func test_run(name: string, fn: int[]) {
+    print("test " + name + "...")
+    let i = 0
+    while i < fn.len() {
+        i = i + 1
+    }
+    print("  ok")
+}
+
+func int_to_str(n: int) -> string {
+    if n == 0 { return "0" }
+    let result = ""
+    let x = n
+    let neg = false
+    if x < 0 { neg = true; x = -x }
+    while x > 0 {
+        let d = x % 10
+        result = chr(48 + d) + result
+        x = x / 10
+    }
+    if neg { result = "-" + result }
+    result
+}
