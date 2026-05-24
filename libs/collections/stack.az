@@ -1,0 +1,39 @@
+// Stack — LIFO data structure (functional style, backed by int[])
+
+func stack_new() -> int[] {
+    []
+}
+
+func stack_push(s: int[], val: int) {
+    s.push(val)
+}
+
+func stack_pop(s: int[]) -> int {
+    s.pop()
+}
+
+func stack_peek(s: int[]) -> int {
+    s[s.len() - 1]
+}
+
+func stack_len(s: int[]) -> int {
+    s.len()
+}
+
+func stack_is_empty(s: int[]) -> bool {
+    s.is_empty()
+}
+
+func stack_clear(s: int[]) {
+    s.clear()
+}
+
+func stack_to_array(s: int[]) -> int[] {
+    let result: int[] = []
+    let i = 0
+    while i < s.len() {
+        result.push(s[i])
+        i = i + 1
+    }
+    result
+}

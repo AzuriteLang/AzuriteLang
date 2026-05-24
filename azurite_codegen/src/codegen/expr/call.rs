@@ -51,7 +51,7 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
         Expr::MethodCall { obj, method, args, null_safe: _ } => {
             // Array method calls: arr.push(), arr.pop(), arr.len()
             if let Expr::Ident(ident) = obj.as_ref() {
-                if cg.array_lengths.contains_key(&ident.name) {
+                if cg.array_lengths.contains_key(&ident.name) || cg.array_elem_types.contains_key(&ident.name) {
                     let var_name = ident.name.clone();
                     // Load the actual heap pointer from the variable alloca
                     let arr_heap_ptr = if let Some((arr_alloca, _)) = cg.variables.get(&var_name) {
@@ -62,20 +62,26 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                     let elem_tag = cg.array_elem_types.get(&var_name).copied().unwrap_or(0);
                     match method.as_str() {
                         "len" => {
-                            let len_ptr = cg.array_lengths[&var_name];
-                            let val = cg.builder.build_load(cg.context.i64_type(), len_ptr, "arr_len").unwrap();
+                            if let Some(&len_ptr) = cg.array_lengths.get(&var_name) {
+                                let val = cg.builder.build_load(cg.context.i64_type(), len_ptr, "arr_len").unwrap();
+                                return Ok(val);
+                            }
+                            // Fallback: read from heap header
+                            let hdr = unsafe { cg.builder.build_gep(cg.context.i64_type(), arr_heap_ptr, &[cg.context.i64_type().const_int(-1i64 as u64, true)], "hdr").unwrap() };
+                            let val = cg.builder.build_load(cg.context.i64_type(), hdr, "arr_len").unwrap();
                             return Ok(val);
                         }
                         "is_empty" => {
-                            let len_ptr = cg.array_lengths[&var_name];
-                            let len = cg.builder.build_load(cg.context.i64_type(), len_ptr, "len").unwrap().into_int_value();
+                            let len = super::control::read_array_len(cg, arr_heap_ptr);
                             let zero = cg.context.i64_type().const_zero();
                             let is_zero = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, len, zero, "emp").unwrap();
                             return Ok(cg.builder.build_int_z_extend(is_zero, cg.context.i64_type(), "emp_i64").unwrap().into());
                         }
                         "clear" => {
-                            let len_ptr = cg.array_lengths[&var_name];
-                            cg.builder.build_store(len_ptr, cg.context.i64_type().const_zero()).unwrap();
+                            super::control::write_array_len(cg, arr_heap_ptr, cg.context.i64_type().const_zero());
+                            if let Some(&len_ptr) = cg.array_lengths.get(&var_name) {
+                                cg.builder.build_store(len_ptr, cg.context.i64_type().const_zero()).unwrap();
+                            }
                             return Ok(cg.context.i64_type().const_zero().into());
                         }
                         "reverse" => {
@@ -93,43 +99,52 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                             return Ok(result);
                         }
                         "push" => {
-                            let len_ptr = cg.array_lengths[&var_name];
                             let val = cg.compile_expr(&args[0])?;
                             let val_i64 = super::control::val_to_i64(cg, val);
                             let i64_ty = cg.context.i64_type();
-                            let old_len = cg.builder.build_load(i64_ty, len_ptr, "ol").unwrap().into_int_value();
+                            let old_len = super::control::read_array_len(cg, arr_heap_ptr);
                             let new_len = cg.builder.build_int_add(old_len, i64_ty.const_int(1, false), "nl").unwrap();
-                            cg.builder.build_store(len_ptr, new_len).unwrap();
-                            let cap_ptr = cg.array_lengths[&format!("{}.__cap", var_name)];
-                            let old_cap = cg.builder.build_load(i64_ty, cap_ptr, "oc").unwrap().into_int_value();
-                            let full = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, old_len, old_cap, "full").unwrap();
-                            let cf = cg.function.unwrap();
-                            let grow_bb = cg.context.append_basic_block(cf, "grow");
-                            let skip_bb = cg.context.append_basic_block(cf, "nogrow");
-                            let merge_bb = cg.context.append_basic_block(cf, "push_end");
-                            cg.builder.build_conditional_branch(full, grow_bb, skip_bb).unwrap();
-                            cg.builder.position_at_end(grow_bb);
-                            let zero_cap = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, old_cap, i64_ty.const_zero(), "zc").unwrap();
-                            let base_cap = i64_ty.const_int(4, false);
-                            let doubled = cg.builder.build_int_mul(old_cap, i64_ty.const_int(2, false), "dbl").unwrap();
-                            let new_cap = cg.builder.build_select(zero_cap, base_cap, doubled, "nc").unwrap().into_int_value();
-                            let new_sz = cg.builder.build_int_mul(new_cap, i64_ty.const_int(8, false), "nsz").unwrap();
-                            if cg.module.get_function("realloc").is_none() {
-                                let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
-                                let rt = ptr_ty.fn_type(&[ptr_ty.into(), i64_ty.into()], false);
-                                cg.module.add_function("realloc", rt, None);
+                            super::control::write_array_len(cg, arr_heap_ptr, new_len);
+                            if let Some(&len_ptr) = cg.array_lengths.get(&var_name) {
+                                cg.builder.build_store(len_ptr, new_len).unwrap();
                             }
-                            let realloc_args = &[arr_heap_ptr.into(), new_sz.into()];
-                            let new_ptr_call = cg.builder.build_call(cg.module.get_function("realloc").unwrap(), realloc_args, "rp").unwrap();
-                            let new_ptr_pv = new_ptr_call.try_as_basic_value().unwrap_basic().into_pointer_value();
-                            cg.builder.build_store(cap_ptr, new_cap).unwrap();
-                            if let Some((arr_alloca, _)) = cg.variables.get(&var_name) {
-                                cg.builder.build_store(*arr_alloca, new_ptr_pv).unwrap();
+                            // Realloc if capacity entry exists
+                            if let Some(&cap_ptr) = cg.array_lengths.get(&format!("{}.__cap", var_name)) {
+                                let old_cap = cg.builder.build_load(i64_ty, cap_ptr, "oc").unwrap().into_int_value();
+                                let full = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, old_len, old_cap, "full").unwrap();
+                                let cf = cg.function.unwrap();
+                                let grow_bb = cg.context.append_basic_block(cf, "grow");
+                                let skip_bb = cg.context.append_basic_block(cf, "nogrow");
+                                let merge_bb = cg.context.append_basic_block(cf, "push_end");
+                                cg.builder.build_conditional_branch(full, grow_bb, skip_bb).unwrap();
+                                cg.builder.position_at_end(grow_bb);
+                                let zero_cap = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, old_cap, i64_ty.const_zero(), "zc").unwrap();
+                                let base_cap = i64_ty.const_int(4, false);
+                                let doubled = cg.builder.build_int_mul(old_cap, i64_ty.const_int(2, false), "dbl").unwrap();
+                                let new_cap = cg.builder.build_select(zero_cap, base_cap, doubled, "nc").unwrap().into_int_value();
+                                let new_sz = cg.builder.build_int_mul(new_cap, i64_ty.const_int(8, false), "nsz").unwrap();
+                                if cg.module.get_function("realloc").is_none() {
+                                    let ptr_ty = cg.context.ptr_type(inkwell::AddressSpace::default());
+                                    let rt = ptr_ty.fn_type(&[ptr_ty.into(), i64_ty.into()], false);
+                                    cg.module.add_function("realloc", rt, None);
+                                }
+                                // Compute raw pointer (header starts at data_ptr - 1)
+                                let raw_int = cg.builder.build_int_sub(cg.builder.build_ptr_to_int(arr_heap_ptr, i64_ty, "dp2i").unwrap(), i64_ty.const_int(8, false), "raw_i").unwrap();
+                                let raw_ptr = cg.builder.build_int_to_ptr(raw_int, cg.context.ptr_type(inkwell::AddressSpace::default()), "raw_p").unwrap();
+                                let realloc_sz = cg.builder.build_int_add(new_sz, i64_ty.const_int(8, false), "rsz").unwrap();
+                                let new_raw_call = cg.builder.build_call(cg.module.get_function("realloc").unwrap(), &[raw_ptr.into(), realloc_sz.into()], "rp").unwrap();
+                                let new_raw_pv = new_raw_call.try_as_basic_value().unwrap_basic().into_pointer_value();
+                                // New data pointer is new_raw + 1
+                                let new_data = unsafe { cg.builder.build_gep(i64_ty, new_raw_pv, &[i64_ty.const_int(1, false)], "nd").unwrap() };
+                                cg.builder.build_store(cap_ptr, new_cap).unwrap();
+                                if let Some(&(arr_alloca, _)) = cg.variables.get(&var_name) {
+                                    cg.builder.build_store(arr_alloca, new_data).unwrap();
+                                }
+                                cg.builder.build_unconditional_branch(merge_bb).unwrap();
+                                cg.builder.position_at_end(skip_bb);
+                                cg.builder.build_unconditional_branch(merge_bb).unwrap();
+                                cg.builder.position_at_end(merge_bb);
                             }
-                            cg.builder.build_unconditional_branch(merge_bb).unwrap();
-                            cg.builder.position_at_end(skip_bb);
-                            cg.builder.build_unconditional_branch(merge_bb).unwrap();
-                            cg.builder.position_at_end(merge_bb);
                             let arr_final = if let Some((arr_alloca, _)) = cg.variables.get(&var_name) {
                                 cg.builder.build_load(cg.context.ptr_type(inkwell::AddressSpace::default()), *arr_alloca, "arr_f").unwrap().into_pointer_value()
                             } else { arr_heap_ptr };
@@ -138,9 +153,8 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                             return Ok(i64_ty.const_zero().into());
                         }
                         "pop" => {
-                            let len_ptr = cg.array_lengths[&var_name];
                             let i64_ty = cg.context.i64_type();
-                            let old_len = cg.builder.build_load(i64_ty, len_ptr, "ol").unwrap().into_int_value();
+                            let old_len = super::control::read_array_len(cg, arr_heap_ptr);
                             let new_len = cg.builder.build_int_sub(old_len, i64_ty.const_int(1, false), "nl").unwrap();
                             let is_empty = cg.builder.build_int_compare(inkwell::IntPredicate::EQ, old_len, i64_ty.const_zero(), "emp").unwrap();
                             let cf = cg.function.unwrap();
@@ -148,16 +162,19 @@ pub fn compile_call<'ctx>(cg: &mut CodeGen<'ctx>, expr: &Expr) -> Result<BasicVa
                             let empty_bb = cg.context.append_basic_block(cf, "pemp");
                             let mg = cg.context.append_basic_block(cf, "pmg");
                             let res_alloca = cg.create_entry_alloca(i64_ty.into(), "pop_res");
+                            cg.builder.build_store(res_alloca, i64_ty.const_zero()).unwrap();
                             cg.builder.build_conditional_branch(is_empty, empty_bb, not_empty_bb).unwrap();
                             cg.builder.position_at_end(not_empty_bb);
-                            cg.builder.build_store(len_ptr, new_len).unwrap();
+                            super::control::write_array_len(cg, arr_heap_ptr, new_len);
+                            if let Some(&len_ptr) = cg.array_lengths.get(&var_name) {
+                                cg.builder.build_store(len_ptr, new_len).unwrap();
+                            }
                             let last_idx = cg.builder.build_int_sub(old_len, i64_ty.const_int(1, false), "li").unwrap();
                             let gep = unsafe { cg.builder.build_gep(i64_ty, arr_heap_ptr, &[last_idx], "pop_gep").unwrap() };
                             let raw = cg.builder.build_load(i64_ty, gep, "pop_v").unwrap();
                             cg.builder.build_store(res_alloca, raw).unwrap();
                             cg.builder.build_unconditional_branch(mg).unwrap();
                             cg.builder.position_at_end(empty_bb);
-                            cg.builder.build_store(res_alloca, i64_ty.const_zero()).unwrap();
                             cg.builder.build_unconditional_branch(mg).unwrap();
                             cg.builder.position_at_end(mg);
                             let result = cg.builder.build_load(i64_ty, res_alloca, "pop_r").unwrap();

@@ -21,6 +21,12 @@ pub fn parse_type(p: &mut Parser) -> Result<Type, AzError> {
                 p.expect(TokenKind::Greater, "'>'")?;
                 Ok(Type::Generic { name, params })
             } else {
+                // Check for array type: int[], string[], float[]
+                if p.peek_kind() == Some(TokenKind::LBracket) {
+                    p.advance();
+                    p.expect(TokenKind::RBracket, "']'")?;
+                    return Ok(Type::Array(Box::new(Type::Name(name)), None));
+                }
                 Ok(Type::Name(name))
             }
         }

@@ -1,0 +1,7 @@
+// collections — Stack, Queue, PriorityQueue, LinkedList, HashSet, HashMap
+import "stack.az"
+import "queue.az"
+import "priority_queue.az"
+import "linked_list.az"
+import "hash_set.az"
+import "hash_map.az"

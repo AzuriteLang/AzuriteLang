@@ -17,14 +17,20 @@ pub fn dispatch<'ctx>(cg: &mut CodeGen<'ctx>, name: &str, args: &[Expr]) -> Resu
 }
 
 fn compile_len<'ctx>(cg: &mut CodeGen<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, AzError> {
+    // Array literal: comptime constant
     if let Expr::Array(elems) = &args[0] {
         return Ok(cg.context.i64_type().const_int(elems.len() as u64, false).into());
     }
+    // Check if identifier refers to an array variable
     if let Expr::Ident(ident) = &args[0] {
-        if let Some(len_ptr) = cg.array_lengths.get(&ident.name) {
-            return Ok(cg.builder.build_load(cg.context.i64_type(), *len_ptr, "arr_len").unwrap());
+        if cg.array_elem_types.contains_key(&ident.name) {
+            let val = cg.compile_expr(&args[0])?;
+            let ptr = val.into_pointer_value();
+            let hdr = unsafe { cg.builder.build_gep(cg.context.i64_type(), ptr, &[cg.context.i64_type().const_int(-1i64 as u64, true)], "alen").unwrap() };
+            return Ok(cg.builder.build_load(cg.context.i64_type(), hdr, "arr_len").unwrap());
         }
     }
+    // Fallback: strlen for strings
     let val = cg.compile_expr(&args[0])?;
     let ptr = val.into_pointer_value();
     if cg.module.get_function("strlen").is_none() {

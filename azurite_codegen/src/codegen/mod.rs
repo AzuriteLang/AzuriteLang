@@ -181,6 +181,20 @@ impl<'ctx> CodeGen<'ctx> {
                         let ptr = self.create_entry_alloca(pv.get_type(), &param.name.name);
                         self.builder.build_store(ptr, pv).unwrap();
                         self.variables.insert(param.name.name.clone(), (ptr, pv.get_type()));
+                        // If this param has array type annotation, register it for array methods
+                        if let Some(ref ta) = param.type_annotation {
+                            if let azurite_parser::ast::Type::Array(elem, _) = ta {
+                                let elem_tag = if let azurite_parser::ast::Type::Name(n) = elem.as_ref() {
+                                    match n.as_str() {
+                                        "float" => 1u64,
+                                        "string" => 2,
+                                        "bool" => 3,
+                                        _ => 0,
+                                    }
+                                } else { 0 };
+                                self.array_elem_types.insert(param.name.name.clone(), elem_tag);
+                            }
+                        }
                     }
                 }
 
@@ -592,6 +606,9 @@ impl<'ctx> CodeGen<'ctx> {
             azurite_parser::ast::Type::Name(n) if n == "float" => self.context.f64_type().into(),
             azurite_parser::ast::Type::Name(n) if n == "bool" => self.context.i64_type().into(),
             azurite_parser::ast::Type::Name(n) if self.struct_types.contains_key(n) => {
+                self.context.ptr_type(inkwell::AddressSpace::default()).into()
+            }
+            azurite_parser::ast::Type::Array(_, _) => {
                 self.context.ptr_type(inkwell::AddressSpace::default()).into()
             }
             azurite_parser::ast::Type::Tuple(_) => {
